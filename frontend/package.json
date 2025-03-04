@@ -9,9 +9,7 @@
   },
   "devDependencies": {
     "typescript": "^5.0.0",
-    "vite": "^5.0.0"
-  },
-  "dependencies": {
-    "ws": "^8.14.0"
+    "vite": "^5.0.0",
+    "@types/webgl2": "^0.0.10"
   }
 }

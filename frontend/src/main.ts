@@ -1,35 +1,25 @@
-class QuantumSynth {
-  private backendConnected: boolean = false;
-  private ws: WebSocket | null = null;
+import { Visualizer } from './visualizer.js';
 
-  async init() {
-    // Try to connect to backend first (optional)
-    await this.tryConnectBackend();
-    
-    // Initialize audio capture
-    await this.initAudio();
-    
-    // Initialize visualization
-    this.initWebGL();
+class QuantumSynth {
+  private visualizer: Visualizer;
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+
+  constructor() {
+    this.visualizer = new Visualizer();
   }
 
-  private async tryConnectBackend() {
+  async init() {
     try {
-      this.ws = new WebSocket('wss://' + window.location.host + '/ws');
-      this.ws.onopen = () => {
-        this.backendConnected = true;
-        console.log("Connected to enhanced backend features");
-      };
-      this.ws.onerror = () => {
-        console.log("Running in pure frontend mode");
-      };
+      await this.initAudio();
+      console.log("Quantum Synth initialized successfully!");
     } catch (error) {
-      console.log("Backend not available, using frontend-only mode");
+      console.error("Failed to initialize:", error);
     }
   }
 
   private async initAudio() {
-    // Pure frontend audio capture
+    // Get screen capture with audio
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: true,
       audio: {
@@ -40,42 +30,33 @@ class QuantumSynth {
       }
     });
 
-    const audioContext = new AudioContext();
-    const source = audioContext.createMediaStreamSource(stream);
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
-    source.connect(analyser);
-
-    // Process audio and visualize
-    this.processAudio(analyser);
+    // Setup audio context and analyser
+    this.audioContext = new AudioContext();
+    this.analyser = this.audioContext.createAnalyser();
+    this.analyser.fftSize = 256;
+    
+    const source = this.audioContext.createMediaStreamSource(stream);
+    source.connect(this.analyser);
+    
+    // Start processing audio
+    this.processAudio();
   }
 
-  private processAudio(analyser: AnalyserNode) {
-    const data = new Uint8Array(analyser.frequencyBinCount);
-    const process = () => {
-      analyser.getByteFrequencyData(data);
-      
-      // Send to backend if connected
-      if (this.backendConnected && this.ws) {
-        this.ws.send(JSON.stringify({ type: 'audio', data: Array.from(data) }));
-      }
-      
-      // Update visualization
-      this.updateVisualization(data);
-      requestAnimationFrame(process);
+  private processAudio() {
+    const data = new Uint8Array(this.analyser!.frequencyBinCount);
+    
+    const processFrame = () => {
+      this.analyser!.getByteFrequencyData(data);
+      this.visualizer.update(data);
+      requestAnimationFrame(processFrame);
     };
-    process();
-  }
-
-  private initWebGL() {
-    // WebGL initialization
-    console.log("WebGL visualizer ready");
-  }
-
-  private updateVisualization(data: Uint8Array) {
-    // Update visualization based on audio data
+    
+    processFrame();
   }
 }
 
-// Initialize
-new QuantumSynth().init();
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', () => {
+  const synth = new QuantumSynth();
+  synth.init();
+});
