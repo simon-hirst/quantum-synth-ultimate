@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Synth Ultimate</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: #000;
+            font-family: 'Arial', sans-serif;
+        }
+        canvas { 
+            display: block; 
+            width: 100vw;
+            height: 100vh;
+        }
+        .overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #0ff;
+            z-index: 100;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="overlay">
+        <h1>Quantum Synth Ultimate</h1>
+        <p>Share your screen and audio when prompted</p>
+    </div>
+    <canvas id="glCanvas"></canvas>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
