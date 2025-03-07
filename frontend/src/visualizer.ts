@@ -1,19 +1,32 @@
 export class Visualizer {
   private canvas: HTMLCanvasElement;
-  private gl: WebGL2RenderingContext;
-  private particleBuffer: WebGLBuffer;
-  private shaderProgram: WebGLProgram;
+  private gl: WebGL2RenderingContext | null;
+  private particleBuffer: WebGLBuffer | null = null;
+  private shaderProgram: WebGLProgram | null = null;
   private audioData: Uint8Array = new Uint8Array(256);
 
   constructor(canvasId: string = 'glCanvas') {
     this.canvas = document.getElementById(canvasId) as HTMLCanvasElement;
-    this.gl = this.canvas.getContext('webgl2')!;
+    if (!this.canvas) {
+      console.error('Canvas element not found!');
+      return;
+    }
+
+    this.gl = this.canvas.getContext('webgl2');
+    if (!this.gl) {
+      console.error('WebGL2 not supported!');
+      return;
+    }
+
+    console.log('WebGL2 context initialized successfully');
     this.initWebGL();
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
 
   private initWebGL() {
+    if (!this.gl) return;
+
     // Set clear color to black
     this.gl.clearColor(0.0, 0.0, 0.0, 1.0);
     
@@ -21,9 +34,10 @@ export class Visualizer {
     const vsSource = `
       #version 300 es
       in vec2 aPosition;
+      uniform float uIntensity;
       void main() {
         gl_Position = vec4(aPosition, 0.0, 1.0);
-        gl_PointSize = 3.0;
+        gl_PointSize = 5.0 + uIntensity * 20.0;
       }
     `;
 
@@ -31,36 +45,63 @@ export class Visualizer {
       #version 300 es
       precision highp float;
       out vec4 fragColor;
+      uniform vec3 uColor;
       void main() {
-        fragColor = vec4(0.0, 0.8, 1.0, 1.0);
+        fragColor = vec4(uColor, 1.0);
       }
     `;
 
     this.shaderProgram = this.createProgram(vsSource, fsSource);
     this.particleBuffer = this.createParticleBuffer();
+    console.log('WebGL initialization complete');
   }
 
-  private createProgram(vsSource: string, fsSource: string): WebGLProgram {
-    const program = this.gl.createProgram()!;
+  private createProgram(vsSource: string, fsSource: string): WebGLProgram | null {
+    if (!this.gl) return null;
+
+    const program = this.gl.createProgram();
+    if (!program) return null;
+
     const vertexShader = this.compileShader(vsSource, this.gl.VERTEX_SHADER);
     const fragmentShader = this.compileShader(fsSource, this.gl.FRAGMENT_SHADER);
     
+    if (!vertexShader || !fragmentShader) return null;
+
     this.gl.attachShader(program, vertexShader);
     this.gl.attachShader(program, fragmentShader);
     this.gl.linkProgram(program);
     
+    if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
+      console.error('Shader program link error:', this.gl.getProgramInfoLog(program));
+      return null;
+    }
+    
     return program;
   }
 
-  private compileShader(source: string, type: number): WebGLShader {
-    const shader = this.gl.createShader(type)!;
+  private compileShader(source: string, type: number): WebGLShader | null {
+    if (!this.gl) return null;
+
+    const shader = this.gl.createShader(type);
+    if (!shader) return null;
+
     this.gl.shaderSource(shader, source);
     this.gl.compileShader(shader);
+    
+    if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+      console.error('Shader compile error:', this.gl.getShaderInfoLog(shader));
+      return null;
+    }
+    
     return shader;
   }
 
-  private createParticleBuffer(): WebGLBuffer {
-    const buffer = this.gl.createBuffer()!;
+  private createParticleBuffer(): WebGLBuffer | null {
+    if (!this.gl) return null;
+
+    const buffer = this.gl.createBuffer();
+    if (!buffer) return null;
+
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, buffer);
     
     // Initial particle positions
@@ -80,11 +121,26 @@ export class Visualizer {
   }
 
   private render() {
+    if (!this.gl || !this.shaderProgram || !this.particleBuffer) {
+      console.log('WebGL not ready for rendering');
+      return;
+    }
+
     this.gl.clear(this.gl.COLOR_BUFFER_BIT);
     this.gl.useProgram(this.shaderProgram);
     
     // Update particles based on audio data
     this.updateParticles();
+    
+    // Set uniforms for color and intensity
+    const intensityLoc = this.gl.getUniformLocation(this.shaderProgram, 'uIntensity');
+    const colorLoc = this.gl.getUniformLocation(this.shaderProgram, 'uColor');
+    
+    const avgIntensity = this.audioData.length > 0 ? 
+      this.audioData.reduce((a, b) => a + b) / this.audioData.length / 255 : 0;
+    
+    this.gl.uniform1f(intensityLoc, avgIntensity);
+    this.gl.uniform3f(colorLoc, 0.0, 0.8, 1.0); // Cyan color
     
     // Draw particles
     const positionAttr = this.gl.getAttribLocation(this.shaderProgram, 'aPosition');
@@ -95,13 +151,14 @@ export class Visualizer {
   }
 
   private updateParticles() {
-    if (this.audioData.length === 0) return;
+    if (!this.gl || !this.particleBuffer || this.audioData.length === 0) return;
 
     const particles = new Float32Array(1000 * 2);
     for (let i = 0; i < 1000; i++) {
       const audioIndex = i % this.audioData.length;
       const intensity = this.audioData[audioIndex] / 255.0;
       
+      // Make particles move more dramatically with audio
       particles[i * 2] = (Math.random() - 0.5) * 2;
       particles[i * 2 + 1] = (Math.random() - 0.5) * 2 * intensity;
     }
@@ -111,6 +168,8 @@ export class Visualizer {
   }
 
   private resize() {
+    if (!this.canvas || !this.gl) return;
+    
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
     this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
