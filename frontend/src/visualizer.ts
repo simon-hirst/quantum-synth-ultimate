@@ -19,6 +19,7 @@ export class Visualizer {
     }
 
     console.log('WebGL2 context initialized successfully');
+    console.log('Canvas dimensions: ' + this.canvas.width + 'x' + this.canvas.height);
     this.initWebGL();
     this.resize();
     window.addEventListener('resize', () => this.resize());

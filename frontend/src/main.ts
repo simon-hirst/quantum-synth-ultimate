@@ -1,14 +1,24 @@
-import { Visualizer } from './visualizer.js';
+import { Visualizer } from './visualizer.ts';
 
 class QuantumSynth {
-  private visualizer: Visualizer;
+  private visualizer: Visualizer | null = null;
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private isPlaying: boolean = false;
 
   constructor() {
-    this.visualizer = new Visualizer();
     console.log('QuantumSynth constructor called');
+    // Delay visualizer creation until after DOM is fully ready
+    setTimeout(() => this.initializeVisualizer(), 100);
+  }
+
+  private initializeVisualizer() {
+    try {
+      this.visualizer = new Visualizer();
+      console.log('Visualizer initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize visualizer:', error);
+    }
   }
 
   async init() {
@@ -84,12 +94,11 @@ class QuantumSynth {
 
       this.analyser!.getByteFrequencyData(data);
       
-      // Log some audio data for debugging
-      if (Math.random() < 0.01) { // Only log occasionally
-        console.log('Audio data sample:', data.slice(0, 5));
+      // Send audio data to visualizer if it's ready
+      if (this.visualizer) {
+        this.visualizer.update(data);
       }
       
-      this.visualizer.update(data);
       requestAnimationFrame(processFrame);
     };
     
