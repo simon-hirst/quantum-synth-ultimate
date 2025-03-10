@@ -31,26 +31,22 @@ export class Visualizer {
     // Set clear color to black
     this.gl.clearColor(0.0, 0.0, 0.0, 1.0);
     
-    // Create simple shader program
-    const vsSource = `
-      #version 300 es
-      in vec2 aPosition;
-      uniform float uIntensity;
-      void main() {
-        gl_Position = vec4(aPosition, 0.0, 1.0);
-        gl_PointSize = 5.0 + uIntensity * 20.0;
-      }
-    `;
+    // Create simple shader program - FIXED VERSION DIRECTIVE
+    const vsSource = `#version 300 es
+in vec2 aPosition;
+uniform float uIntensity;
+void main() {
+  gl_Position = vec4(aPosition, 0.0, 1.0);
+  gl_PointSize = 5.0 + uIntensity * 20.0;
+}`;
 
-    const fsSource = `
-      #version 300 es
-      precision highp float;
-      out vec4 fragColor;
-      uniform vec3 uColor;
-      void main() {
-        fragColor = vec4(uColor, 1.0);
-      }
-    `;
+    const fsSource = `#version 300 es
+precision highp float;
+out vec4 fragColor;
+uniform vec3 uColor;
+void main() {
+  fragColor = vec4(uColor, 1.0);
+}`;
 
     this.shaderProgram = this.createProgram(vsSource, fsSource);
     this.particleBuffer = this.createParticleBuffer();
