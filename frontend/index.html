@@ -16,24 +16,31 @@
             width: 100vw;
             height: 100vh;
         }
-        .overlay {
+        .browser-warning {
             position: absolute;
             top: 20px;
-            left: 20px;
-            color: #0ff;
-            z-index: 100;
-            background: rgba(0,0,0,0.7);
-            padding: 10px;
-            border-radius: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ff6b6b;
+            background: rgba(0,0,0,0.8);
+            padding: 15px;
+            border-radius: 8px;
+            z-index: 1000;
+            text-align: center;
         }
     </style>
 </head>
 <body>
-    <div class="overlay">
-        <h1>Quantum Synth Ultimate</h1>
-        <p>Share your screen and audio when prompted</p>
+    <div id="browserWarning" class="browser-warning" style="display: none;">
+        For best results, use Chrome or Edge browser
     </div>
     <canvas id="glCanvas"></canvas>
+    <script>
+        // Browser detection
+        if (!navigator.userAgent.includes('Chrome') && !navigator.userAgent.includes('Edg/')) {
+            document.getElementById('browserWarning').style.display = 'block';
+        }
+    </script>
     <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
