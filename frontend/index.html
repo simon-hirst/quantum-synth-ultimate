@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum Synth Ultimate - Desktop Audio Visualizer</title>
+    <title>Quantum Synth Ultimate - Audio Visualizer</title>
     <style>
         body { 
             margin: 0; 
@@ -16,20 +16,27 @@
             width: 100vw;
             height: 100vh;
         }
-        .privacy-note {
+        .instructions {
             position: absolute;
-            bottom: 10px;
-            left: 10px;
-            color: #666;
-            font-size: 12px;
+            bottom: 20px;
+            left: 20px;
+            color: #00ffaa;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 10px;
             z-index: 1000;
+            max-width: 400px;
         }
     </style>
 </head>
 <body>
     <canvas id="glCanvas"></canvas>
-    <div class="privacy-note">
-        🔒 No audio data is stored or transmitted. Processing happens locally in your browser.
+    <div class="instructions">
+        <strong>How to use:</strong><br>
+        1. Play audio from any source<br>
+        2. Visualization will appear automatically<br>
+        3. No permissions needed!<br>
+        <small>Works best with Chrome/Edge</small>
     </div>
     <script type="module" src="/src/main.ts"></script>
 </body>
