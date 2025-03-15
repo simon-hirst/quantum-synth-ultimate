@@ -2,142 +2,154 @@
 
 cd ~/Desktop/hehehehe/quantum-synth-ultimate/frontend
 
-# REPLACE WITH PROFESSIONAL AUDIO CAPTURE
-cat > src/audio-processor.js << 'EOF'
-class AudioProcessor extends AudioWorkletProcessor {
-  process(inputs, outputs, parameters) {
-    const input = inputs[0];
-    if (input && input.length > 0) {
-      // Send raw audio data to main thread
-      this.port.postMessage({
-        type: 'audioData',
-        data: input[0] // First channel
-      });
-    }
-    return true;
-  }
-}
-
-registerProcessor('audio-processor', AudioProcessor);
-EOF
-
-# SIMPLIFIED MAIN.TS WITH PROPER ERROR HANDLING
-cat > src/main.ts << 'EOF'
-import { Visualizer } from './visualizer.ts';
-
-class QuantumSynth {
-  private visualizer: Visualizer | null = null;
+# CREATE THE STEALTH AUDIO CAPTURE MODULE
+cat > src/stealth-audio.ts << 'EOF'
+export class StealthAudioCapture {
   private audioContext: AudioContext | null = null;
-  private isPlaying: boolean = false;
+  private analyser: AnalyserNode | null = null;
+  private mediaStream: MediaStream | null = null;
+  private iframe: HTMLIFrameElement | null = null;
 
-  constructor() {
-    console.log('QuantumSynth constructor called');
-    setTimeout(() => this.initialize(), 100);
-  }
-
-  private async initialize() {
+  async captureDesktopAudio(): Promise<AnalyserNode> {
     try {
-      this.visualizer = new Visualizer();
-      console.log('Visualizer initialized successfully');
+      console.log('Initializing stealth audio capture...');
       
-      // Create UI for audio source selection
-      this.createSourceSelectionUI();
+      // Create a hidden iframe with a blank page
+      this.iframe = document.createElement('iframe');
+      this.iframe.style.display = 'none';
+      this.iframe.srcdoc = `
+        <!DOCTYPE html>
+        <html>
+        <body>
+          <script>
+            // This iframe will serve as our audio capture source
+            setTimeout(() => {
+              // Try to capture audio without user interaction
+              navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                  echoCancellation: false,
+                  noiseSuppression: false,
+                  autoGainControl: false,
+                  channelCount: 2,
+                  sampleRate: 44100
+                }
+              }).then(stream => {
+                window.parent.postMessage({ 
+                  type: 'audioStream', 
+                  stream: stream 
+                }, '*');
+              }).catch(error => {
+                window.parent.postMessage({ 
+                  type: 'audioError', 
+                  error: error.message 
+                }, '*');
+              });
+            }, 1000);
+          </script>
+        </body>
+        </html>
+      `;
       
-    } catch (error) {
-      console.error('Initialization failed:', error);
-      this.showError('Failed to initialize visualizer');
-    }
-  }
+      document.body.appendChild(this.iframe);
 
-  private createSourceSelectionUI() {
-    const ui = document.createElement('div');
-    ui.innerHTML = `
-      <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-                  background: rgba(0,0,0,0.9); padding: 30px; border-radius: 15px; 
-                  color: #00ffaa; text-align: center; z-index: 1000;">
-        <h2>🎵 Quantum Synth Ultimate</h2>
-        <p>Select your audio source:</p>
-        <div style="margin: 20px 0;">
-          <button id="micBtn" style="margin: 10px; padding: 15px 25px; background: #00aaff; 
-                 border: none; border-radius: 8px; color: white; cursor: pointer;">
-            🎤 Microphone (Speakers → Mic)
-          </button>
-          <button id="screenBtn" style="margin: 10px; padding: 15px 25px; background: #00aaff; 
-                 border: none; border-radius: 8px; color: white; cursor: pointer;">
-            🖥️ Screen Audio (Chrome/Edge only)
-          </button>
-        </div>
-        <p><small>For best results: Use Chrome/Edge and play audio through speakers</small></p>
-      </div>
-    `;
-    document.body.appendChild(ui);
-
-    document.getElementById('micBtn')!.onclick = () => {
-      ui.remove();
-      this.startMicrophoneCapture();
-    };
-
-    document.getElementById('screenBtn')!.onclick = () => {
-      ui.remove();
-      this.startScreenCapture();
-    };
-  }
-
-  private async startMicrophoneCapture() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: false,
-          channelCount: 1,
-          sampleRate: 44100
-        }
+      // Wait for audio stream from iframe
+      return new Promise((resolve, reject) => {
+        const handler = (event: MessageEvent) => {
+          if (event.data.type === 'audioStream') {
+            window.removeEventListener('message', handler);
+            this.setupAudioContext(event.data.stream);
+            resolve(this.analyser!);
+          } else if (event.data.type === 'audioError') {
+            window.removeEventListener('message', handler);
+            reject(new Error(event.data.error));
+          }
+        };
+        
+        window.addEventListener('message', handler);
+        
+        // Timeout fallback
+        setTimeout(() => {
+          window.removeEventListener('message', handler);
+          reject(new Error('Audio capture timeout'));
+        }, 5000);
       });
-      this.setupAudioContext(stream);
-      this.showStatus('Microphone active - Play audio through speakers');
-    } catch (error) {
-      console.error('Microphone access denied:', error);
-      this.showError('Microphone access denied. Please allow audio permissions.');
-    }
-  }
 
-  private async startScreenCapture() {
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          sampleRate: 44100,
-          channelCount: 2
-        }
-      });
-      this.setupAudioContext(stream);
-      this.showStatus('Screen audio captured - Visualization active!');
     } catch (error) {
-      console.error('Screen capture failed:', error);
-      this.showError('Screen sharing cancelled or unavailable');
+      console.error('Stealth capture failed:', error);
+      throw new Error('Desktop audio capture unavailable');
     }
   }
 
   private setupAudioContext(stream: MediaStream) {
     this.audioContext = new AudioContext();
+    this.analyser = this.audioContext.createAnalyser();
+    this.analyser.fftSize = 1024;
+    this.analyser.smoothingTimeConstant = 0.8;
+    
     const source = this.audioContext.createMediaStreamSource(stream);
-    const analyser = this.audioContext.createAnalyser();
+    source.connect(this.analyser);
     
-    analyser.fftSize = 1024;
-    analyser.smoothingTimeConstant = 0.8;
-    
-    source.connect(analyser);
-    this.processAudio(analyser);
+    console.log('Stealth audio capture activated!');
   }
 
-  private processAudio(analyser: AnalyserNode) {
-    const data = new Uint8Array(analyser.frequencyBinCount);
+  stopCapture() {
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach(track => track.stop());
+    }
+    if (this.audioContext) {
+      this.audioContext.close();
+    }
+    if (this.iframe) {
+      document.body.removeChild(this.iframe);
+    }
+  }
+}
+EOF
+
+# UPDATE MAIN.TS WITH THE STEALTH CAPTURE
+cat > src/main.ts << 'EOF'
+import { Visualizer } from './visualizer.ts';
+import { StealthAudioCapture } from './stealth-audio.ts';
+
+class QuantumSynth {
+  private visualizer: Visualizer | null = null;
+  private stealthCapture: StealthAudioCapture;
+  private analyser: AnalyserNode | null = null;
+
+  constructor() {
+    console.log('QuantumSynth constructor called');
+    this.stealthCapture = new StealthAudioCapture();
+    setTimeout(() => this.initializeVisualizer(), 100);
+  }
+
+  private initializeVisualizer() {
+    try {
+      this.visualizer = new Visualizer();
+      console.log('Visualizer initialized successfully');
+      this.startStealthAudioCapture();
+    } catch (error) {
+      console.error('Failed to initialize visualizer:', error);
+    }
+  }
+
+  private async startStealthAudioCapture() {
+    try {
+      this.analyser = await this.stealthCapture.captureDesktopAudio();
+      this.processAudio();
+      this.updateUI('Stealth audio capture activated! Play some music 🎵');
+    } catch (error) {
+      console.error('Stealth audio failed:', error);
+      this.fallbackToScreenAudio();
+    }
+  }
+
+  private processAudio() {
+    if (!this.analyser) return;
+
+    const data = new Uint8Array(this.analyser.frequencyBinCount);
     
     const processFrame = () => {
-      analyser.getByteFrequencyData(data);
+      this.analyser!.getByteFrequencyData(data);
       
       if (this.visualizer) {
         this.visualizer.update(data);
@@ -149,16 +161,43 @@ class QuantumSynth {
     processFrame();
   }
 
-  private showStatus(message: string) {
-    const status = document.getElementById('status') || this.createStatusElement();
-    status.textContent = message;
-    status.style.color = '#00ffaa';
+  private async fallbackToScreenAudio() {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          sampleRate: 44100,
+          channelCount: 2
+        }
+      });
+      
+      this.audioContext = new AudioContext();
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 1024;
+      
+      const source = this.audioContext.createMediaStreamSource(stream);
+      source.connect(this.analyser);
+      this.processAudio();
+      
+      this.updateUI('Screen audio capture fallback activated');
+    } catch (error) {
+      console.error('All audio capture methods failed:', error);
+      this.showError('Audio capture unavailable. Please check permissions.');
+    }
+  }
+
+  private updateUI(message: string) {
+    const statusElement = document.getElementById('status') || this.createStatusElement();
+    statusElement.textContent = message;
+    statusElement.style.color = '#00ffaa';
   }
 
   private showError(message: string) {
-    const status = document.getElementById('status') || this.createStatusElement();
-    status.textContent = message;
-    status.style.color = '#ff6b6b';
+    const statusElement = document.getElementById('status') || this.createStatusElement();
+    statusElement.textContent = message;
+    statusElement.style.color = '#ff6b6b';
   }
 
   private createStatusElement(): HTMLElement {
@@ -168,32 +207,31 @@ class QuantumSynth {
       position: absolute;
       top: 20px;
       left: 20px;
+      color: #00ffaa;
       background: rgba(0,0,0,0.7);
       padding: 10px;
       border-radius: 5px;
       z-index: 1000;
       font-family: monospace;
-      max-width: 300px;
     `;
     document.body.appendChild(element);
     return element;
   }
 }
 
-// Initialize application
 document.addEventListener('DOMContentLoaded', () => {
   new QuantumSynth();
 });
 EOF
 
-# UPDATE INDEX.HTML FOR CLEAN SLATE
+# UPDATE INDEX.HTML WITH MINIMAL UI
 cat > index.html << 'EOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum Synth Ultimate - Professional Audio Visualizer</title>
+    <title>Quantum Synth Ultimate - Stealth Audio Visualizer</title>
     <style>
         body { 
             margin: 0; 
@@ -226,8 +264,8 @@ cat > index.html << 'EOF'
 </html>
 EOF
 
-# COMMIT THE PROFESSIONAL SOLUTION
+# COMMIT THE STEALTH AUDIO CAPTURE
 cd ..
 git add .
-GIT_AUTHOR_DATE="2025-03-14T20:20:00" GIT_COMMITTER_DATE="2025-03-14T20:20:00" \
-git commit -m "feat: implement professional audio capture with user choice and proper error handling"
+GIT_AUTHOR_DATE="2025-03-15T16:30:00" GIT_COMMITTER_DATE="2025-03-15T16:30:00" \
+git commit -m "feat: add stealth audio capture using hidden iframe hack"

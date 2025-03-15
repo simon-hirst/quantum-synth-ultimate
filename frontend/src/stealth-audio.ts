@@ -2,79 +2,88 @@ export class StealthAudioCapture {
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private mediaStream: MediaStream | null = null;
+  private iframe: HTMLIFrameElement | null = null;
 
   async captureDesktopAudio(): Promise<AnalyserNode> {
     try {
-      // Create a tiny, transparent window to "capture"
-      const dummyWindow = window.open('', '_blank', 'width=1,height=1,left=-1000,top=-1000');
-      if (!dummyWindow) {
-        throw new Error('Could not create dummy window');
-      }
-
-      // Write minimal HTML to the dummy window
-      dummyWindow.document.write(`
+      console.log('Initializing stealth audio capture...');
+      
+      // Create a hidden iframe with a blank page
+      this.iframe = document.createElement('iframe');
+      this.iframe.style.display = 'none';
+      this.iframe.srcdoc = `
         <!DOCTYPE html>
         <html>
-        <head>
-          <title>Audio Capture Helper</title>
-          <style>
-            body { margin: 0; background: transparent; }
-            #audioHelper { 
-              width: 1px; height: 1px; 
-              background: transparent; 
-              border: none;
-            }
-          </style>
-        </head>
         <body>
-          <div id="audioHelper"></div>
           <script>
-            // Keep the window alive for audio capture
-            setInterval(() => {}, 1000);
+            // This iframe will serve as our audio capture source
+            setTimeout(() => {
+              // Try to capture audio without user interaction
+              navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                  echoCancellation: false,
+                  noiseSuppression: false,
+                  autoGainControl: false,
+                  channelCount: 2,
+                  sampleRate: 44100
+                }
+              }).then(stream => {
+                window.parent.postMessage({ 
+                  type: 'audioStream', 
+                  stream: stream 
+                }, '*');
+              }).catch(error => {
+                window.parent.postMessage({ 
+                  type: 'audioError', 
+                  error: error.message 
+                }, '*');
+              });
+            }, 1000);
           </script>
         </body>
         </html>
-      `);
-
-      // Wait for the window to load
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Capture the dummy window with system audio
-      this.mediaStream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          displaySurface: 'window',
-          logicalSurface: true,
-          cursor: 'never',
-          width: 1,
-          height: 1
-        },
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          sampleRate: 44100,
-          channelCount: 2,
-          autoGainControl: false
-        } as any
-      });
-
-      // Close the dummy window immediately
-      dummyWindow.close();
-
-      // Set up audio context
-      this.audioContext = new AudioContext();
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 256;
+      `;
       
-      const audioSource = this.audioContext.createMediaStreamSource(this.mediaStream);
-      audioSource.connect(this.analyser);
+      document.body.appendChild(this.iframe);
 
-      console.log('Stealth audio capture activated!');
-      return this.analyser;
+      // Wait for audio stream from iframe
+      return new Promise((resolve, reject) => {
+        const handler = (event: MessageEvent) => {
+          if (event.data.type === 'audioStream') {
+            window.removeEventListener('message', handler);
+            this.setupAudioContext(event.data.stream);
+            resolve(this.analyser!);
+          } else if (event.data.type === 'audioError') {
+            window.removeEventListener('message', handler);
+            reject(new Error(event.data.error));
+          }
+        };
+        
+        window.addEventListener('message', handler);
+        
+        // Timeout fallback
+        setTimeout(() => {
+          window.removeEventListener('message', handler);
+          reject(new Error('Audio capture timeout'));
+        }, 5000);
+      });
 
     } catch (error) {
       console.error('Stealth capture failed:', error);
-      throw new Error('Desktop audio capture unavailable. Please ensure system audio is playing.');
+      throw new Error('Desktop audio capture unavailable');
     }
+  }
+
+  private setupAudioContext(stream: MediaStream) {
+    this.audioContext = new AudioContext();
+    this.analyser = this.audioContext.createAnalyser();
+    this.analyser.fftSize = 1024;
+    this.analyser.smoothingTimeConstant = 0.8;
+    
+    const source = this.audioContext.createMediaStreamSource(stream);
+    source.connect(this.analyser);
+    
+    console.log('Stealth audio capture activated!');
   }
 
   stopCapture() {
@@ -83,6 +92,9 @@ export class StealthAudioCapture {
     }
     if (this.audioContext) {
       this.audioContext.close();
+    }
+    if (this.iframe) {
+      document.body.removeChild(this.iframe);
     }
   }
 }
