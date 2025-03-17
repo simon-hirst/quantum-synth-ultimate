@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum Synth Ultimate - Stealth Audio Visualizer</title>
+    <title>Quantum Synth Ultimate - Audio Visualizer</title>
     <style>
         body { 
             margin: 0; 
@@ -16,16 +16,18 @@
             width: 100vw;
             height: 100vh;
         }
-        #status {
+        #status, #instructions {
             position: absolute;
-            top: 20px;
-            left: 20px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            padding: 30px;
+            border-radius: 15px;
             color: #00ffaa;
-            background: rgba(0,0,0,0.7);
-            padding: 10px;
-            border-radius: 5px;
+            text-align: center;
             z-index: 1000;
-            font-family: monospace;
+            max-width: 400px;
         }
     </style>
 </head>

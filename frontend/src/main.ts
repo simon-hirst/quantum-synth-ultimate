@@ -1,35 +1,47 @@
 import { Visualizer } from './visualizer.ts';
-import { StealthAudioCapture } from './stealth-audio.ts';
+import { AudioCapture } from './audio-capture.ts';
 
 class QuantumSynth {
   private visualizer: Visualizer | null = null;
-  private stealthCapture: StealthAudioCapture;
+  private audioCapture: AudioCapture;
   private analyser: AnalyserNode | null = null;
 
   constructor() {
     console.log('QuantumSynth constructor called');
-    this.stealthCapture = new StealthAudioCapture();
-    setTimeout(() => this.initializeVisualizer(), 100);
-  }
-
-  private initializeVisualizer() {
-    try {
-      this.visualizer = new Visualizer();
-      console.log('Visualizer initialized successfully');
-      this.startStealthAudioCapture();
-    } catch (error) {
-      console.error('Failed to initialize visualizer:', error);
+    this.audioCapture = new AudioCapture();
+    
+    // Wait for DOM to be fully ready :cite[6]
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => this.initialize());
+    } else {
+      setTimeout(() => this.initialize(), 100);
     }
   }
 
-  private async startStealthAudioCapture() {
+  private async initialize() {
     try {
-      this.analyser = await this.stealthCapture.captureDesktopAudio();
-      this.processAudio();
-      this.updateUI('Stealth audio capture activated! Play some music 🎵');
+      this.visualizer = new Visualizer();
+      console.log('Visualizer initialized successfully');
+      
+      await this.startAudioCapture();
+      
     } catch (error) {
-      console.error('Stealth audio failed:', error);
-      this.fallbackToScreenAudio();
+      console.error('Initialization failed:', error);
+      this.showError('Failed to initialize: ' + error.message);
+    }
+  }
+
+  private async startAudioCapture() {
+    try {
+      this.showInstructions();
+      
+      this.analyser = await this.audioCapture.captureAudio();
+      this.processAudio();
+      this.updateUI('Audio capture active! Play some music 🎵');
+      
+    } catch (error) {
+      console.error('Audio capture failed:', error);
+      this.showError('Audio access denied. Please allow permissions and reload.');
     }
   }
 
@@ -51,43 +63,46 @@ class QuantumSynth {
     processFrame();
   }
 
-  private async fallbackToScreenAudio() {
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          sampleRate: 44100,
-          channelCount: 2
-        }
-      });
-      
-      this.audioContext = new AudioContext();
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 1024;
-      
-      const source = this.audioContext.createMediaStreamSource(stream);
-      source.connect(this.analyser);
-      this.processAudio();
-      
-      this.updateUI('Screen audio capture fallback activated');
-    } catch (error) {
-      console.error('All audio capture methods failed:', error);
-      this.showError('Audio capture unavailable. Please check permissions.');
-    }
+  private showInstructions() {
+    const instructions = document.getElementById('instructions') || this.createInstructionsElement();
+    instructions.innerHTML = `
+      <h3>🔊 Enable Audio Sharing</h3>
+      <p>For the best experience:</p>
+      <ol>
+        <li>Click "Share" when prompted</li>
+        <li>Select <strong>"Chrome Window"</strong> or any window</li>
+        <li>Check <strong>"Share audio"</strong> ✓</li>
+        <li>Play your music (Spotify, YouTube, etc.)</li>
+      </ol>
+      <p><em>No audio data is stored or transmitted. Processing happens locally.</em></p>
+    `;
   }
 
   private updateUI(message: string) {
     const statusElement = document.getElementById('status') || this.createStatusElement();
     statusElement.textContent = message;
     statusElement.style.color = '#00ffaa';
+    
+    // Hide instructions when successful
+    const instructions = document.getElementById('instructions');
+    if (instructions) {
+      instructions.style.display = 'none';
+    }
   }
 
   private showError(message: string) {
     const statusElement = document.getElementById('status') || this.createStatusElement();
-    statusElement.textContent = message;
-    statusElement.style.color = '#ff6b6b';
+    statusElement.innerHTML = `
+      <div style="color: #ff6b6b; margin-bottom: 10px;">${message}</div>
+      <button onclick="location.reload()" style="
+        padding: 10px 20px;
+        background: #00aaff;
+        border: none;
+        border-radius: 5px;
+        color: white;
+        cursor: pointer;
+      ">Try Again</button>
+    `;
   }
 
   private createStatusElement(): HTMLElement {
@@ -95,20 +110,40 @@ class QuantumSynth {
     element.id = 'status';
     element.style.cssText = `
       position: absolute;
-      top: 20px;
-      left: 20px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.9);
+      padding: 30px;
+      border-radius: 15px;
       color: #00ffaa;
-      background: rgba(0,0,0,0.7);
-      padding: 10px;
-      border-radius: 5px;
+      text-align: center;
       z-index: 1000;
-      font-family: monospace;
+      max-width: 400px;
+    `;
+    document.body.appendChild(element);
+    return element;
+  }
+
+  private createInstructionsElement(): HTMLElement {
+    const element = document.createElement('div');
+    element.id = 'instructions';
+    element.style.cssText = `
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.9);
+      padding: 30px;
+      border-radius: 15px;
+      color: #00ffaa;
+      z-index: 1000;
+      max-width: 500px;
     `;
     document.body.appendChild(element);
     return element;
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  new QuantumSynth();
-});
+// Initialize application
+new QuantumSynth();
