@@ -1,21 +1,17 @@
 import { Visualizer } from './visualizer.ts';
-import { AudioCapture } from './audio-capture.ts';
+import { AudioSetupUI } from './audio-setup-ui.ts';
 
 class QuantumSynth {
   private visualizer: Visualizer | null = null;
-  private audioCapture: AudioCapture;
+  private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
+  private audioSetupUI: AudioSetupUI | null = null;
 
   constructor() {
     console.log('QuantumSynth constructor called');
-    this.audioCapture = new AudioCapture();
     
-    // Wait for DOM to be fully ready :cite[6]
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => this.initialize());
-    } else {
-      setTimeout(() => this.initialize(), 100);
-    }
+    // Wait a bit to ensure DOM is fully ready
+    setTimeout(() => this.initialize(), 100);
   }
 
   private async initialize() {
@@ -23,25 +19,44 @@ class QuantumSynth {
       this.visualizer = new Visualizer();
       console.log('Visualizer initialized successfully');
       
-      await this.startAudioCapture();
+      // Show setup UI instead of immediately requesting permissions
+      this.showSetupUI();
       
     } catch (error) {
       console.error('Initialization failed:', error);
-      this.showError('Failed to initialize: ' + error.message);
+      this.showError('Failed to initialize visualizer');
     }
   }
 
-  private async startAudioCapture() {
+  private showSetupUI() {
+    // Only show UI if we don't already have audio access
+    if (!this.analyser) {
+      this.audioSetupUI = new AudioSetupUI((stream) => {
+        this.handleAudioStream(stream);
+      });
+      this.audioSetupUI.show();
+    }
+  }
+
+  private async handleAudioStream(stream: MediaStream) {
     try {
-      this.showInstructions();
+      this.audioContext = new AudioContext();
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 1024;
+      this.analyser.smoothingTimeConstant = 0.8;
       
-      this.analyser = await this.audioCapture.captureAudio();
+      const source = this.audioContext.createMediaStreamSource(stream);
+      source.connect(this.analyser);
+      
       this.processAudio();
-      this.updateUI('Audio capture active! Play some music 🎵');
+      this.showSuccess('Audio visualization active! Play some music 🎵');
       
     } catch (error) {
-      console.error('Audio capture failed:', error);
-      this.showError('Audio access denied. Please allow permissions and reload.');
+      console.error('Audio processing failed:', error);
+      this.showError('Failed to process audio stream');
+      
+      // Re-show the setup UI if audio processing fails
+      this.showSetupUI();
     }
   }
 
@@ -63,87 +78,42 @@ class QuantumSynth {
     processFrame();
   }
 
-  private showInstructions() {
-    const instructions = document.getElementById('instructions') || this.createInstructionsElement();
-    instructions.innerHTML = `
-      <h3>🔊 Enable Audio Sharing</h3>
-      <p>For the best experience:</p>
-      <ol>
-        <li>Click "Share" when prompted</li>
-        <li>Select <strong>"Chrome Window"</strong> or any window</li>
-        <li>Check <strong>"Share audio"</strong> ✓</li>
-        <li>Play your music (Spotify, YouTube, etc.)</li>
-      </ol>
-      <p><em>No audio data is stored or transmitted. Processing happens locally.</em></p>
-    `;
-  }
-
-  private updateUI(message: string) {
-    const statusElement = document.getElementById('status') || this.createStatusElement();
-    statusElement.textContent = message;
-    statusElement.style.color = '#00ffaa';
-    
-    // Hide instructions when successful
-    const instructions = document.getElementById('instructions');
-    if (instructions) {
-      instructions.style.display = 'none';
-    }
+  private showSuccess(message: string) {
+    this.updateStatus(message, '#00ffaa');
   }
 
   private showError(message: string) {
-    const statusElement = document.getElementById('status') || this.createStatusElement();
-    statusElement.innerHTML = `
-      <div style="color: #ff6b6b; margin-bottom: 10px;">${message}</div>
-      <button onclick="location.reload()" style="
-        padding: 10px 20px;
-        background: #00aaff;
-        border: none;
-        border-radius: 5px;
-        color: white;
-        cursor: pointer;
-      ">Try Again</button>
-    `;
+    this.updateStatus(message, '#ff6b6b');
   }
 
-  private createStatusElement(): HTMLElement {
-    const element = document.createElement('div');
-    element.id = 'status';
-    element.style.cssText = `
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0,0,0,0.9);
-      padding: 30px;
-      border-radius: 15px;
-      color: #00ffaa;
-      text-align: center;
-      z-index: 1000;
-      max-width: 400px;
-    `;
-    document.body.appendChild(element);
-    return element;
-  }
-
-  private createInstructionsElement(): HTMLElement {
-    const element = document.createElement('div');
-    element.id = 'instructions';
-    element.style.cssText = `
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0,0,0,0.9);
-      padding: 30px;
-      border-radius: 15px;
-      color: #00ffaa;
-      z-index: 1000;
-      max-width: 500px;
-    `;
-    document.body.appendChild(element);
-    return element;
+  private updateStatus(message: string, color: string) {
+    let statusElement = document.getElementById('status');
+    if (!statusElement) {
+      statusElement = document.createElement('div');
+      statusElement.id = 'status';
+      statusElement.style.cssText = `
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        background: rgba(0, 0, 0, 0.8);
+        padding: 12px 20px;
+        border-radius: 8px;
+        z-index: 1000;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 14px;
+        backdrop-filter: blur(10px);
+        border: 1px solid ${color}33;
+      `;
+      document.body.appendChild(statusElement);
+    }
+    
+    statusElement.textContent = message;
+    statusElement.style.color = color;
+    statusElement.style.borderColor = `${color}33`;
   }
 }
 
-// Initialize application
-new QuantumSynth();
+// Initialize only when DOM is fully loaded
+document.addEventListener('DOMContentLoaded', () => {
+  new QuantumSynth();
+});
