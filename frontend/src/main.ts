@@ -1,14 +1,17 @@
 import { Visualizer } from './visualizer.ts';
 import { AudioSetupUI } from './audio-setup-ui.ts';
+import { ScreenSharingHelper } from './screen-sharing-helper.ts';
 
 class QuantumSynth {
   private visualizer: Visualizer | null = null;
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private audioSetupUI: AudioSetupUI | null = null;
+  private screenHelper: ScreenSharingHelper;
 
   constructor() {
     console.log('QuantumSynth constructor called');
+    this.screenHelper = new ScreenSharingHelper();
     
     // Wait a bit to ensure DOM is fully ready
     setTimeout(() => this.initialize(), 100);
@@ -50,6 +53,11 @@ class QuantumSynth {
       
       this.processAudio();
       this.showSuccess('Audio visualization active! Play some music 🎵');
+      
+      // Show the screen sharing helper after a brief delay
+      setTimeout(() => {
+        this.screenHelper.showHelper();
+      }, 2000);
       
     } catch (error) {
       console.error('Audio processing failed:', error);

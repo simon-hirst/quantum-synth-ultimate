@@ -2,203 +2,88 @@
 
 cd ~/Desktop/hehehehe/quantum-synth-ultimate/frontend
 
-# UPDATE THE AUDIO SETUP UI TO PREVENT IMMEDIATE PROMPTS
-cat > src/audio-setup-ui.ts << 'EOF'
-export class AudioSetupUI {
-  private overlay: HTMLDivElement;
-  private onSetupComplete: (stream: MediaStream) => void;
+# ADD SCREEN SHARING HELPER COMPONENT
+cat > src/screen-sharing-helper.ts << 'EOF'
+export class ScreenSharingHelper {
+  private helperElement: HTMLDivElement | null = null;
 
-  constructor(onSetupComplete: (stream: MediaStream) => void) {
-    this.onSetupComplete = onSetupComplete;
-    this.overlay = this.createOverlay();
-  }
-
-  show() {
-    document.body.appendChild(this.overlay);
-  }
-
-  hide() {
-    if (this.overlay.parentElement) {
-      document.body.removeChild(this.overlay);
+  showHelper() {
+    // Create helper element if it doesn't exist
+    if (!this.helperElement) {
+      this.helperElement = this.createHelperElement();
+      document.body.appendChild(this.helperElement);
+      
+      // Auto-hide after 10 seconds
+      setTimeout(() => {
+        this.hideHelper();
+      }, 10000);
     }
   }
 
-  private createOverlay(): HTMLDivElement {
-    const overlay = document.createElement('div');
-    overlay.innerHTML = `
+  hideHelper() {
+    if (this.helperElement && this.helperElement.parentElement) {
+      document.body.removeChild(this.helperElement);
+      this.helperElement = null;
+    }
+  }
+
+  private createHelperElement(): HTMLDivElement {
+    const helper = document.createElement('div');
+    helper.innerHTML = `
       <div style="
         position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.95);
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: #00ffaa;
+        padding: 12px 20px;
+        border-radius: 25px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 14px;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(0, 255, 170, 0.3);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 1000;
         display: flex;
-        justify-content: center;
         align-items: center;
-        z-index: 10000;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        color: white;
+        gap: 10px;
       ">
-        <div style="
-          background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-          padding: 40px;
-          border-radius: 20px;
-          max-width: 600px;
-          text-align: center;
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-          border: 1px solid #00ffaa33;
-        ">
-          <div style="font-size: 48px; margin-bottom: 20px;">🎵</div>
-          <h2 style="margin: 0 0 16px 0; font-size: 28px; color: #00ffaa;">
-            Enable Audio Visualization
-          </h2>
-          <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #cccccc;">
-            To visualize your system audio, we need to capture your screen with audio. 
-            <strong>Please read the instructions below before proceeding.</strong>
-          </p>
-          
-          <div style="
-            background: rgba(0, 255, 170, 0.1);
-            padding: 20px;
-            border-radius: 12px;
-            margin: 24px 0;
-            text-align: left;
-            border-left: 4px solid #00ffaa;
-          ">
-            <h4 style="margin: 0 0 12px 0; color: #00ffaa;">📋 Important Instructions:</h4>
-            <ol style="margin: 0; padding-left: 20px; color: #cccccc;">
-              <li><strong>First, play your music</strong> (Spotify, YouTube, etc.)</li>
-              <li>Click "Start Visualization" below</li>
-              <li>In the browser popup, select <strong>"Entire Screen"</strong> (works best!)</li>
-              <li><strong style="color: #00ffaa;">CRITICAL:</strong> Check <strong>"Share audio"</strong> ✓</li>
-              <li>Click "Share"</li>
-            </ol>
-            
-            <div style="margin-top: 16px; padding: 12px; background: rgba(0, 0, 0, 0.3); border-radius: 8px;">
-              <strong>💡 Pro Tip:</strong> For the best experience, select "Entire Screen" instead of a specific window or tab.
-            </div>
-          </div>
-
-          <div style="display: flex; gap: 16px; justify-content: center;">
-            <button id="startBtn" style="
-              padding: 16px 32px;
-              background: linear-gradient(135deg, #00ffaa 0%, #00cc88 100%);
-              color: black;
-              border: none;
-              border-radius: 50px;
-              font-size: 16px;
-              font-weight: 600;
-              cursor: pointer;
-              transition: all 0.2s ease;
-              box-shadow: 0 4px 12px rgba(0, 255, 170, 0.3);
-            ">
-              🎵 Start Visualization
-            </button>
-            <button id="cancelBtn" style="
-              padding: 16px 32px;
-              background: rgba(255, 255, 255, 0.1);
-              color: #cccccc;
-              border: 1px solid rgba(255, 255, 255, 0.2);
-              border-radius: 50px;
-              font-size: 16px;
-              cursor: pointer;
-              transition: all 0.2s ease;
-            ">
-              Not Now
-            </button>
-          </div>
-
-          <p style="margin: 24px 0 0 0; font-size: 14px; color: #666;">
-            🔒 Your audio is processed locally and never leaves your browser
-          </p>
-        </div>
+        <span>💡 Click "Hide" on the Chrome screen sharing indicator to clean up your view</span>
+        <button style="
+          background: rgba(0, 255, 170, 0.2);
+          border: 1px solid rgba(0, 255, 170, 0.5);
+          color: #00ffaa;
+          border-radius: 15px;
+          padding: 6px 12px;
+          cursor: pointer;
+          font-size: 12px;
+        " onclick="this.parentElement.parentElement.style.display='none'">
+          Got it
+        </button>
       </div>
     `;
-
-    // Add event listeners
-    overlay.querySelector('#startBtn')!.addEventListener('click', () => {
-      this.startAudioCapture();
-    });
-
-    overlay.querySelector('#cancelBtn')!.addEventListener('click', () => {
-      this.hide();
-    });
-
-    return overlay;
-  }
-
-  private async startAudioCapture() {
-    try {
-      this.updateButtonState('Connecting...');
-      
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          cursor: 'never',
-          displaySurface: 'monitor'
-        },
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          sampleRate: 44100,
-          channelCount: 2
-        } as any
-      });
-
-      this.hide();
-      this.onSetupComplete(stream);
-
-    } catch (error) {
-      console.error('Audio capture failed:', error);
-      this.showError('Please allow screen sharing to continue. Remember to check "Share audio"!');
-      this.updateButtonState('Try Again');
-    }
-  }
-
-  private updateButtonState(text: string) {
-    const button = this.overlay.querySelector('#startBtn') as HTMLButtonElement;
-    button.textContent = text;
-    button.disabled = text === 'Connecting...';
-  }
-
-  private showError(message: string) {
-    // Remove any existing error message
-    const existingError = this.overlay.querySelector('.error-message');
-    if (existingError) {
-      existingError.remove();
-    }
-
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error-message';
-    errorDiv.style.cssText = `
-      color: #ff6b6b;
-      margin: 16px 0;
-      padding: 12px;
-      background: rgba(255, 107, 107, 0.1);
-      border-radius: 8px;
-      border: 1px solid rgba(255, 107, 107, 0.3);
-    `;
-    errorDiv.textContent = message;
-    
-    const buttonContainer = this.overlay.querySelector('div > div > div:last-child');
-    buttonContainer?.parentNode?.insertBefore(errorDiv, buttonContainer);
+    return helper;
   }
 }
 EOF
 
-# UPDATE MAIN.TS TO ENSURE NO AUTOMATIC PROMPTS
+# UPDATE MAIN.TS TO INCLUDE THE SCREEN SHARING HELPER
 cat > src/main.ts << 'EOF'
 import { Visualizer } from './visualizer.ts';
 import { AudioSetupUI } from './audio-setup-ui.ts';
+import { ScreenSharingHelper } from './screen-sharing-helper.ts';
 
 class QuantumSynth {
   private visualizer: Visualizer | null = null;
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private audioSetupUI: AudioSetupUI | null = null;
+  private screenHelper: ScreenSharingHelper;
 
   constructor() {
     console.log('QuantumSynth constructor called');
+    this.screenHelper = new ScreenSharingHelper();
     
     // Wait a bit to ensure DOM is fully ready
     setTimeout(() => this.initialize(), 100);
@@ -240,6 +125,11 @@ class QuantumSynth {
       
       this.processAudio();
       this.showSuccess('Audio visualization active! Play some music 🎵');
+      
+      // Show the screen sharing helper after a brief delay
+      setTimeout(() => {
+        this.screenHelper.showHelper();
+      }, 2000);
       
     } catch (error) {
       console.error('Audio processing failed:', error);
@@ -309,49 +199,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 EOF
 
-# UPDATE INDEX.HTML TO ENSURE PROPER LOADING
-cat > index.html << 'EOF'
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum Synth - Audio Visualizer</title>
-    <style>
-        body { 
-            margin: 0; 
-            overflow: hidden; 
-            background: #000;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        }
-        canvas { 
-            display: block; 
-            width: 100vw;
-            height: 100vh;
-        }
-        #status {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 12px 20px;
-            border-radius: 8px;
-            z-index: 1000;
-            font-size: 14px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(0, 255, 170, 0.2);
-        }
-    </style>
-</head>
-<body>
-    <canvas id="glCanvas"></canvas>
-    <script type="module" src="/src/main.ts"></script>
-</body>
-</html>
-EOF
-
-# COMMIT THE FIXED VERSION
+# COMMIT THE SCREEN SHARING HELPER
 cd ..
 git add .
-GIT_AUTHOR_DATE="2025-03-19T09:34:00" GIT_COMMITTER_DATE="2025-03-19T09:34:00" \
-git commit -m "fix: prevent immediate screen share prompts and improve instructions for entire screen capture"
+GIT_AUTHOR_DATE="2025-03-21T14:29:00" GIT_COMMITTER_DATE="2025-03-21T14:29:00" \
+git commit -m "feat: add screen sharing helper prompt to guide users on hiding Chrome's indicator"
