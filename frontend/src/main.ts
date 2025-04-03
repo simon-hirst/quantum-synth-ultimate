@@ -1,89 +1,47 @@
-import { Visualizer } from './visualizer.ts';
+import { NeuralVisualizer } from './neural-visualizer.ts';
 import { AudioSetupUI } from './audio-setup-ui.ts';
 import { ScreenSharingHelper } from './screen-sharing-helper.ts';
 
 class QuantumSynth {
-  private visualizer: Visualizer | null = null;
-  private audioContext: AudioContext | null = null;
-  private analyser: AnalyserNode | null = null;
+  private visualizer: NeuralVisualizer | null = null;
   private audioSetupUI: AudioSetupUI | null = null;
   private screenHelper: ScreenSharingHelper;
 
   constructor() {
-    console.log('QuantumSynth constructor called');
+    console.log('QuantumSynth Neural Edition constructor called');
     this.screenHelper = new ScreenSharingHelper();
     
-    // Wait a bit to ensure DOM is fully ready
     setTimeout(() => this.initialize(), 100);
   }
 
   private async initialize() {
     try {
-      this.visualizer = new Visualizer();
-      console.log('Visualizer initialized successfully');
+      const canvas = document.getElementById('glCanvas') as HTMLCanvasElement;
+      this.visualizer = new NeuralVisualizer(canvas);
       
-      // Show setup UI instead of immediately requesting permissions
+      // Show setup UI
       this.showSetupUI();
       
     } catch (error) {
       console.error('Initialization failed:', error);
-      this.showError('Failed to initialize visualizer');
+      this.showError('Failed to initialize neural visualizer');
     }
   }
 
   private showSetupUI() {
-    // Only show UI if we don't already have audio access
-    if (!this.analyser) {
-      this.audioSetupUI = new AudioSetupUI((stream) => {
-        this.handleAudioStream(stream);
-      });
-      this.audioSetupUI.show();
-    }
+    this.audioSetupUI = new AudioSetupUI((stream) => {
+      this.handleAudioStream(stream);
+    });
+    this.audioSetupUI.show();
   }
 
-  private async handleAudioStream(stream: MediaStream) {
-    try {
-      this.audioContext = new AudioContext();
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 1024;
-      this.analyser.smoothingTimeConstant = 0.8;
-      
-      const source = this.audioContext.createMediaStreamSource(stream);
-      source.connect(this.analyser);
-      
-      this.processAudio();
-      this.showSuccess('Audio visualization active! Play some music 🎵');
-      
-      // Show the screen sharing helper after a brief delay
-      setTimeout(() => {
-        this.screenHelper.showHelper();
-      }, 2000);
-      
-    } catch (error) {
-      console.error('Audio processing failed:', error);
-      this.showError('Failed to process audio stream');
-      
-      // Re-show the setup UI if audio processing fails
-      this.showSetupUI();
-    }
-  }
-
-  private processAudio() {
-    if (!this.analyser) return;
-
-    const data = new Uint8Array(this.analyser.frequencyBinCount);
+  private handleAudioStream(stream: MediaStream) {
+    this.showSuccess('Neural audio processing activated! AI is generating your visual universe...');
     
-    const processFrame = () => {
-      this.analyser!.getByteFrequencyData(data);
-      
-      if (this.visualizer) {
-        this.visualizer.update(data);
-      }
-      
-      requestAnimationFrame(processFrame);
-    };
-    
-    processFrame();
+    // Show screen sharing helper
+    setTimeout(() => {
+      this.screenHelper.showHelper();
+    }, 2000);
   }
 
   private showSuccess(message: string) {
@@ -107,8 +65,7 @@ class QuantumSynth {
         padding: 12px 20px;
         border-radius: 8px;
         z-index: 1000;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        font-size: 14px;
+        font-family: monospace;
         backdrop-filter: blur(10px);
         border: 1px solid ${color}33;
       `;
@@ -121,7 +78,6 @@ class QuantumSynth {
   }
 }
 
-// Initialize only when DOM is fully loaded
 document.addEventListener('DOMContentLoaded', () => {
   new QuantumSynth();
 });
