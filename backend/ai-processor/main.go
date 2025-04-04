@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
 	"math"
 	"math/rand"
@@ -23,48 +21,63 @@ type AudioData struct {
 }
 
 type VisualUniverse struct {
-	ParticleCount int        `json:"particleCount"`
-	GeometryType  string     `json:"geometryType"`
-	ColorPalette  []string   `json:"colorPalette"`
+	ParticleCount int           `json:"particleCount"`
+	GeometryType  string        `json:"geometryType"`
+	ColorPalette  []string      `json:"colorPalette"`
 	Physics       PhysicsConfig `json:"physics"`
 	Shaders       ShaderConfig  `json:"shaders"`
 }
 
 type PhysicsConfig struct {
-	Gravity       float32 `json:"gravity"`
-	Turbulence    float32 `json:"turbulence"`
-	Attraction    float32 `json:"attraction"`
-	Repulsion     float32 `json:"repulsion"`
+	Gravity    float32 `json:"gravity"`
+	Turbulence float32 `json:"turbulence"`
+	Attraction float32 `json:"attraction"`
+	Repulsion  float32 `json:"repulsion"`
 }
 
 type ShaderConfig struct {
-	VertexShader   string `json:"vertexShader"`
-	FragmentShader string `json:"fragmentShader"`
+	VertexShader   string                 `json:"vertexShader"`
+	FragmentShader string                 `json:"fragmentShader"`
 	Uniforms       map[string]interface{} `json:"uniforms"`
 }
 
-// AI Model to generate visual universes from audio data
+// Helper function to check for NaN and replace with 0
+func safeFloat(value float32) float32 {
+	if math.IsNaN(float64(value)) {
+		return 0.0
+	}
+	return value
+}
+
 func generateVisualUniverse(audioData AudioData) VisualUniverse {
-	// Analyze audio emotional signature
-	energy := calculateEnergy(audioData.FFT)
-	complexity := calculateComplexity(audioData.FFT)
+	energy := safeFloat(calculateEnergy(audioData.FFT))
+	complexity := safeFloat(calculateComplexity(audioData.FFT))
 	emotion := analyzeEmotion(audioData.FFT)
+
+	// Ensure emotion values are safe
+	for k, v := range emotion {
+		emotion[k] = safeFloat(v)
+	}
 
 	return VisualUniverse{
 		ParticleCount: int(30000 + energy*20000),
 		GeometryType:  selectGeometry(emotion, complexity),
 		ColorPalette:  generateColorPalette(emotion, energy),
 		Physics: PhysicsConfig{
-			Gravity:    0.1 + energy*0.4,
-			Turbulence: 0.2 + complexity*0.6,
-			Attraction: 0.3 + emotion["joy"]*0.4,
-			Repulsion:  0.1 + emotion["anger"]*0.3,
+			Gravity:    safeFloat(0.1 + energy*0.4),
+			Turbulence: safeFloat(0.2 + complexity*0.6),
+			Attraction: safeFloat(0.3 + emotion["joy"]*0.4),
+			Repulsion:  safeFloat(0.1 + emotion["anger"]*0.3),
 		},
 		Shaders: generateShaders(emotion, complexity),
 	}
 }
 
 func calculateEnergy(fft []float32) float32 {
+	if len(fft) == 0 {
+		return 0.0
+	}
+	
 	var sum float32
 	for _, val := range fft {
 		sum += val * val
@@ -73,18 +86,33 @@ func calculateEnergy(fft []float32) float32 {
 }
 
 func calculateComplexity(fft []float32) float32 {
-	// Calculate spectral centroid and spread
+	if len(fft) == 0 {
+		return 0.0
+	}
+	
 	var weightedSum, sum float32
 	for i, val := range fft {
 		freq := float32(i) / float32(len(fft))
 		weightedSum += freq * val
 		sum += val
 	}
+	
+	if sum == 0 {
+		return 0.0
+	}
 	return weightedSum / sum
 }
 
 func analyzeEmotion(fft []float32) map[string]float32 {
-	// Simulated AI emotion analysis based on frequency distribution
+	if len(fft) < 10 {
+		return map[string]float32{
+			"joy":       0.5,
+			"sadness":   0.2,
+			"anger":     0.1,
+			"excitement": 0.7,
+		}
+	}
+	
 	return map[string]float32{
 		"joy":       fft[5] / 255.0,
 		"sadness":   fft[2] / 255.0,
@@ -95,15 +123,7 @@ func analyzeEmotion(fft []float32) map[string]float32 {
 
 func selectGeometry(emotion map[string]float32, complexity float32) string {
 	geometries := []string{"particles", "waves", "strings", "volumetric", "fractal"}
-	weights := []float32{
-		emotion["joy"] * 0.8,
-		emotion["excitement"] * 0.6,
-		complexity * 0.7,
-		emotion["anger"] * 0.9,
-		emotion["sadness"] * 0.5,
-	}
-	
-	return geometries[int(weights[0]*float32(len(geometries)))%len(geometries)]
+	return geometries[rand.Intn(len(geometries))]
 }
 
 func generateColorPalette(emotion map[string]float32, energy float32) []string {
@@ -114,6 +134,7 @@ func generateColorPalette(emotion map[string]float32, energy float32) []string {
 		"excitement": {"#00FF00", "#00CC00", "#009900", "#006600", "#003300"},
 	}
 	
+	// Find dominant emotion
 	dominantEmotion := "joy"
 	maxVal := float32(0)
 	for k, v := range emotion {
@@ -127,62 +148,53 @@ func generateColorPalette(emotion map[string]float32, energy float32) []string {
 }
 
 func generateShaders(emotion map[string]float32, complexity float32) ShaderConfig {
-	// Generate GLSL shaders based on audio characteristics
 	return ShaderConfig{
-		VertexShader: generateVertexShader(emotion, complexity),
-		FragmentShader: generateFragmentShader(emotion, complexity),
+		VertexShader: `
+			uniform float uTime;
+			uniform float uEnergy;
+			uniform float uComplexity;
+			
+			void main() {
+				vec3 newPosition = position;
+				newPosition.x += sin(uTime * 0.001 + position.y * uComplexity) * uEnergy * 2.0;
+				newPosition.y += cos(uTime * 0.001 + position.x * uComplexity) * uEnergy * 2.0;
+				newPosition.z += sin(uTime * 0.002) * uEnergy;
+				
+				gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
+				gl_PointSize = (uEnergy * 5.0) + 2.0;
+			}
+		`,
+		FragmentShader: `
+			uniform float uTime;
+			uniform float uColorJoy;
+			uniform float uColorAnger;
+			
+			void main() {
+				vec2 uv = gl_PointCoord;
+				float distance = length(uv - vec2(0.5));
+				
+				if (distance > 0.5) {
+					discard;
+				}
+				
+				vec3 color = mix(
+					vec3(uColorJoy, 0.5, 0.8),
+					vec3(uColorAnger, 0.2, 0.1),
+					sin(uTime * 0.001) * 0.5 + 0.5
+				);
+				
+				float alpha = 1.0 - smoothstep(0.3, 0.5, distance);
+				gl_FragColor = vec4(color * alpha, alpha);
+			}
+		`,
 		Uniforms: map[string]interface{}{
-			"uTime": 0.0,
-			"uEnergy": emotion["excitement"],
-			"uComplexity": complexity,
-			"uColorJoy": emotion["joy"],
-			"uColorAnger": emotion["anger"],
+			"uTime":        0.0,
+			"uEnergy":      emotion["excitement"],
+			"uComplexity":  complexity,
+			"uColorJoy":    emotion["joy"],
+			"uColorAnger":  emotion["anger"],
 		},
 	}
-}
-
-func generateVertexShader(emotion map[string]float32, complexity float32) string {
-	return `
-		uniform float uTime;
-		uniform float uEnergy;
-		uniform float uComplexity;
-		
-		void main() {
-			vec3 newPosition = position;
-			newPosition.x += sin(uTime * 0.001 + position.y * uComplexity) * uEnergy * 2.0;
-			newPosition.y += cos(uTime * 0.001 + position.x * uComplexity) * uEnergy * 2.0;
-			newPosition.z += sin(uTime * 0.002) * uEnergy;
-			
-			gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
-			gl_PointSize = (uEnergy * 5.0) + 2.0;
-		}
-	`
-}
-
-func generateFragmentShader(emotion map[string]float32, complexity float32) string {
-	return `
-		uniform float uTime;
-		uniform float uColorJoy;
-		uniform float uColorAnger;
-		
-		void main() {
-			vec2 uv = gl_PointCoord;
-			float distance = length(uv - vec2(0.5));
-			
-			if (distance > 0.5) {
-				discard;
-			}
-			
-			vec3 color = mix(
-				vec3(uColorJoy, 0.5, 0.8),
-				vec3(uColorAnger, 0.2, 0.1),
-				sin(uTime * 0.001) * 0.5 + 0.5
-			);
-			
-			float alpha = 1.0 - smoothstep(0.3, 0.5, distance);
-			gl_FragColor = vec4(color * alpha, alpha);
-		}
-	`
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -201,10 +213,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		// Process audio with AI and generate visual universe
 		universe := generateVisualUniverse(audioData)
 		
-		// Send generated universe back to frontend
 		err = conn.WriteJSON(universe)
 		if err != nil {
 			log.Println("Write error:", err)
