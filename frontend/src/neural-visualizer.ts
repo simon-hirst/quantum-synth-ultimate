@@ -47,7 +47,7 @@ export class NeuralVisualizer {
 
   private async connectToAIBackend() {
     try {
-      this.ws = new WebSocket('ws://localhost:8080/ws');
+      this.ws = new WebSocket('ws://57.152.76.45:8080/ws');
       
       this.ws.onopen = () => {
         console.log('Connected to AI Visual Processor');

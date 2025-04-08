@@ -1,6 +1,8 @@
 package main
 
 import (
+    "github.com/gorilla/handlers"
+    "github.com/gorilla/mux"
 	"log"
 	"math"
 	"net/http"
@@ -188,7 +190,28 @@ func main() {
 		port = "8080"
 	}
 
-	http.HandleFunc("/ws", handleWebSocket)
+    // CORS SETUP
+    headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
+    originsOk := handlers.AllowedOrigins([]string{"http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"})
+    methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
+    
+    r := mux.NewRouter()
+    r.HandleFunc("/ws", handleWebSocket)
+    r.HandleFunc("/api/process", handleProcess)
+    r.HandleFunc("/health", handleHealth)
+    
+    http.Handle("/", handlers.CORS(originsOk, headersOk, methodsOk)(r))
+    // CORS SETUP
+    headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
+    originsOk := handlers.AllowedOrigins([]string{"http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"})
+    methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
+    
+    r := mux.NewRouter()
+    r.HandleFunc("/ws", handleWebSocket)
+    r.HandleFunc("/api/process", handleProcess)
+    r.HandleFunc("/health", handleHealth)
+    
+    http.Handle("/", handlers.CORS(originsOk, headersOk, methodsOk)(r))
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("🚀 AI Visual Processor Running"))
 	})
