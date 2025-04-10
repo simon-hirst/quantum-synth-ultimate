@@ -1,0 +1,42 @@
+name: Deploy Backend to Azure Container Apps
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build Go application
+      run: |
+        cd backend/ai-processor
+        go mod download
+        CGO_ENABLED=0 GOOS=linux go build -o ai-processor .
+
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Build and push container image
+      uses: azure/container-apps-deploy-action@v1
+      with:
+        appSourcePath: ./backend/ai-processor
+        registryUrl: quantumsynthacr1757219498.azurecr.io
+        registryUsername: ${{ secrets.REGISTRY_USERNAME }}
+        registryPassword: ${{ secrets.REGISTRY_PASSWORD }}
+        containerAppName: quantum-ai-backend
+        resourceGroup: quantum-synth-rg
+        imageToBuild: quantumsynthacr1757219498.azurecr.io/ai-processor:${{ github.sha }}

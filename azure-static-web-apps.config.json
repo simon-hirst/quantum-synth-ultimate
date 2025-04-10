@@ -1,0 +1,11 @@
+{
+  "locations": [
+    {
+      "appBuildCommand": "npm run build",
+      "appBuildOutputDir": "dist",
+      "appDevserverUrl": "http://localhost:3000",
+      "appName": "quantum-synth-frontend",
+      "resourceGroup": "quantum-synth-rg"
+    }
+  ]
+}
