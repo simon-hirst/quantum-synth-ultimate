@@ -1,221 +1,126 @@
 package main
 
 import (
-    "github.com/gorilla/handlers"
-    "github.com/gorilla/mux"
+	"encoding/json"
+	"fmt"
 	"log"
-	"math"
+	"math/rand"
 	"net/http"
-	"os"
+	"time"
 
+	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		if os.Getenv("ENVIRONMENT") == "production" {
-			return r.Header.Get("Origin") == os.Getenv("CORS_ORIGIN")
-		}
 		return true
 	},
 }
 
 type AudioData struct {
-	FFT       []float32 `json:"fft"`
-	Timestamp int64     `json:"timestamp"`
-	SessionID string    `json:"sessionId"`
+	FFT        []int   `json:"fft"`
+	Timestamp  int64   `json:"timestamp"`
+	SessionID  string  `json:"sessionId"`
+	Amplitude  float64 `json:"amplitude"`
+	Frequency  float64 `json:"frequency"`
+	Complexity float64 `json:"complexity"`
 }
 
-type VisualUniverse struct {
-	ParticleCount int           `json:"particleCount"`
-	GeometryType  string        `json:"geometryType"`
-	ColorPalette  []string      `json:"colorPalette"`
-	Physics       PhysicsConfig `json:"physics"`
-	Shaders       ShaderConfig  `json:"shaders"`
+type ProcessResponse struct {
+	Particles []Particle `json:"particles"`
+	Colors    []string   `json:"colors"`
+	Intensity float64    `json:"intensity"`
 }
 
-type PhysicsConfig struct {
-	Gravity    float32 `json:"gravity"`
-	Turbulence float32 `json:"turbulence"`
-	Attraction float32 `json:"attraction"`
-	Repulsion  float32 `json:"repulsion"`
+type Particle struct {
+	X     float64 `json:"x"`
+	Y     float64 `json:"y"`
+	Z     float64 `json:"z"`
+	Size  float64 `json:"size"`
+	Speed float64 `json:"speed"`
 }
 
-type ShaderConfig struct {
-	VertexShader   string                 `json:"vertexShader"`
-	FragmentShader string                 `json:"fragmentShader"`
-	Uniforms       map[string]interface{} `json:"uniforms"`
-}
-
-func safeFloat(value float32) float32 {
-	if math.IsNaN(float64(value)) {
-		return 0.0
-	}
-	return value
-}
-
-func calculateEnergy(fft []float32) float32 {
-	if len(fft) == 0 {
-		return 0.0
-	}
-
-	var sum float32
-	for _, val := range fft {
-		sum += val * val
-	}
-	return sum / float32(len(fft))
-}
-
-func calculateComplexity(fft []float32) float32 {
-	if len(fft) == 0 {
-		return 0.0
-	}
-
-	var weightedSum, sum float32
-	for i, val := range fft {
-		freq := float32(i) / float32(len(fft))
-		weightedSum += freq * val
-		sum += val
-	}
-
-	if sum == 0 {
-		return 0.0
-	}
-	return weightedSum / sum
-}
-
-func analyzeEmotion(fft []float32) map[string]float32 {
-	if len(fft) < 10 {
-		return map[string]float32{
-			"joy":        0.5,
-			"sadness":    0.2,
-			"anger":      0.1,
-			"excitement": 0.7,
-		}
-	}
-
-	return map[string]float32{
-		"joy":        fft[5] / 255.0,
-		"sadness":    fft[2] / 255.0,
-		"anger":      fft[7] / 255.0,
-		"excitement": fft[9] / 255.0,
-	}
-}
-
-func selectGeometry(emotion map[string]float32, complexity float32) string {
-	return "particles"
-}
-
-func generateColorPalette(emotion map[string]float32, energy float32) []string {
-	return []string{"#FF6B6B", "#4ECDC4", "#C7F464"}
-}
-
-func generateShaders(emotion map[string]float32, complexity float32) ShaderConfig {
-	return ShaderConfig{
-		VertexShader: `
-			uniform float uTime;
-			uniform float uEnergy;
-			void main() {
-				vec3 newPosition = position;
-				newPosition.x += sin(uTime * 0.001) * uEnergy;
-				newPosition.y += cos(uTime * 0.001) * uEnergy;
-				gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
-				gl_PointSize = 3.0;
-			}
-		`,
-		FragmentShader: `
-			void main() {
-				vec2 uv = gl_PointCoord;
-				float distance = length(uv - vec2(0.5));
-				if (distance > 0.5) {
-					discard;
-				}
-				gl_FragColor = vec4(1.0, 0.5, 0.8, 1.0 - distance * 2.0);
-			}
-		`,
-		Uniforms: map[string]interface{}{
-			"uTime":   0.0,
-			"uEnergy": 1.0,
-		},
-	}
-}
-
-func generateVisualUniverse(audioData AudioData) VisualUniverse {
-	energy := safeFloat(calculateEnergy(audioData.FFT))
-	emotion := analyzeEmotion(audioData.FFT)
-
-	return VisualUniverse{
-		ParticleCount: 10000,
-		GeometryType:  "particles",
-		ColorPalette:  generateColorPalette(emotion, energy),
-		Physics: PhysicsConfig{
-			Gravity:    0.1,
-			Turbulence: 0.3,
-			Attraction: 0.2,
-			Repulsion:  0.1,
-		},
-		Shaders: generateShaders(emotion, 0.5),
-	}
-}
-
-func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+func handleProcess(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Print("WebSocket upgrade failed:", err)
+		log.Printf("Failed to upgrade WebSocket: %v", err)
 		return
 	}
 	defer conn.Close()
 
 	for {
-		var audioData AudioData
-		err := conn.ReadJSON(&audioData)
+		_, message, err := conn.ReadMessage()
 		if err != nil {
-			log.Println("Read error:", err)
+			log.Printf("WebSocket read error: %v", err)
 			break
 		}
 
-		universe := generateVisualUniverse(audioData)
+		var audioData AudioData
+		if err := json.Unmarshal(message, &audioData); err != nil {
+			log.Printf("JSON unmarshal error: %v", err)
+			continue
+		}
 
-		err = conn.WriteJSON(universe)
-		if err != nil {
-			log.Println("Write error:", err)
+		// Process audio data and generate visual response
+		response := ProcessResponse{
+			Particles: generateParticles(audioData),
+			Colors:    []string{"#ff6b6b", "#4ecdc4", "#45b7d1", "#f9c74f", "#ffafcc"},
+			Intensity: calculateIntensity(audioData),
+		}
+
+		if err := conn.WriteJSON(response); err != nil {
+			log.Printf("WebSocket write error: %v", err)
 			break
 		}
 	}
 }
 
-func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func generateParticles(audioData AudioData) []Particle {
+	particles := make([]Particle, 100)
+	for i := range particles {
+		particles[i] = Particle{
+			X:     rand.Float64()*2 - 1,
+			Y:     rand.Float64()*2 - 1,
+			Z:     rand.Float64()*2 - 1,
+			Size:  rand.Float64()*0.4 + 0.1,
+			Speed: rand.Float64()*0.09 + 0.01,
+		}
 	}
+	return particles
+}
 
-    // CORS SETUP
-    headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
-    originsOk := handlers.AllowedOrigins([]string{"http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"})
-    methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
-    
-    r := mux.NewRouter()
-    r.HandleFunc("/ws", handleWebSocket)
-    r.HandleFunc("/api/process", handleProcess)
-    r.HandleFunc("/health", handleHealth)
-    
-    http.Handle("/", handlers.CORS(originsOk, headersOk, methodsOk)(r))
-    // CORS SETUP
-    headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
-    originsOk := handlers.AllowedOrigins([]string{"http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"})
-    methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
-    
-    r := mux.NewRouter()
-    r.HandleFunc("/ws", handleWebSocket)
-    r.HandleFunc("/api/process", handleProcess)
-    r.HandleFunc("/health", handleHealth)
-    
-    http.Handle("/", handlers.CORS(originsOk, headersOk, methodsOk)(r))
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("🚀 AI Visual Processor Running"))
-	})
+func calculateIntensity(audioData AudioData) float64 {
+	if len(audioData.FFT) == 0 {
+		return 0.5
+	}
+	sum := 0.0
+	for _, value := range audioData.FFT {
+		sum += float64(value)
+	}
+	return sum / float64(len(audioData.FFT)) / 255.0
+}
 
-	log.Printf("Neural Wave Synthesis AI backend running on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+func main() {
+	rand.Seed(time.Now().UnixNano())
+
+	router := mux.NewRouter()
+	
+	router.HandleFunc("/ws", handleProcess).Methods("GET")
+	router.HandleFunc("/health", handleHealth).Methods("GET")
+
+	// CORS middleware
+	headers := handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
+	methods := handlers.AllowedMethods([]string{"GET", "POST", "PUT", "HEAD", "OPTIONS"})
+	origins := handlers.AllowedOrigins([]string{"*"})
+
+	fmt.Println("Quantum AI Processor starting on :8080")
+	log.Fatal(http.ListenAndServe(":8080", handlers.CORS(headers, methods, origins)(router)))
 }
