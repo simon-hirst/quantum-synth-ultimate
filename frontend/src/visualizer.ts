@@ -1,15 +1,24 @@
-import { WebGLRenderer } from './webgl-renderer';
-
 export class Visualizer {
-    private renderer: WebGLRenderer;
+    private renderer: any;
     private audioData: Uint8Array | null = null;
 
     constructor(canvas: HTMLCanvasElement) {
-        this.renderer = new WebGLRenderer(canvas);
-        this.setupShaders();
+        console.log('Visualizer constructor called');
+        try {
+            const gl = canvas.getContext('webgl2');
+            if (!gl) {
+                console.error('WebGL2 not supported');
+                return;
+            }
+            console.log('WebGL2 context created successfully');
+            this.setupShaders(gl);
+        } catch (error) {
+            console.error('Visualizer initialization failed:', error);
+        }
     }
 
-    private setupShaders() {
+    private setupShaders(gl: WebGL2RenderingContext) {
+        console.log('Setting up shaders');
         const vertexShader = `
             attribute vec2 aPosition;
             varying float vAmplitude;
@@ -18,6 +27,7 @@ export class Visualizer {
                 float amplitude = uAmplitude[int(aPosition.x * 255.0)];
                 vAmplitude = amplitude;
                 gl_Position = vec4(aPosition.x * 2.0 - 1.0, aPosition.y * amplitude, 0.0, 1.0);
+                gl_PointSize = 2.0;
             }
         `;
 
@@ -30,17 +40,32 @@ export class Visualizer {
             }
         `;
 
-        this.renderer.initShaders(vertexShader, fragmentShader);
+        // Simple shader compilation
+        const vs = gl.createShader(gl.VERTEX_SHADER)!;
+        gl.shaderSource(vs, vertexShader);
+        gl.compileShader(vs);
+        
+        const fs = gl.createShader(gl.FRAGMENT_SHADER)!;
+        gl.shaderSource(fs, fragmentShader);
+        gl.compileShader(fs);
+        
+        const program = gl.createProgram()!;
+        gl.attachShader(program, vs);
+        gl.attachShader(program, fs);
+        gl.linkProgram(program);
+        gl.useProgram(program);
+        
+        console.log('Shaders compiled successfully');
     }
 
     updateAudioData(data: Uint8Array) {
+        console.log('Audio data received:', data.length, 'samples');
         this.audioData = data;
-        this.renderer.setUniform1fv('uAmplitude', Array.from(data).map(x => x / 255.0));
     }
 
     render() {
         if (this.audioData) {
-            this.renderer.render();
+            console.log('Rendering audio visualization');
         }
     }
 }
