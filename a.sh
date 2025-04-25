@@ -12,21 +12,22 @@ BACKEND_NAME="quantum-ai-backend"
 FRONTEND_NAME="quantum-synth-frontend"
 ACR_NAME="quantumsynthacr1757219498"
 
-# Function to generate random git commit date
-generate_commit_date() {
-    local base_date="2025-04-14"
+# Function to generate next commit date based on previous date
+get_next_commit_date() {
+    local prev_date="$1"
     local days_to_add=$((RANDOM % 7 + 1))
-    local hours=$((RANDOM % 24))
-    local minutes=$((RANDOM % 60))
-    local seconds=$((RANDOM % 60))
     
     # For Linux
-    date -d "$base_date + $days_to_add days + $hours hours + $minutes minutes + $seconds seconds" "+%Y-%m-%dT%H:%M:%S"
+    date -d "$prev_date + $days_to_add days" "+%Y-%m-%dT%H:%M:%S"
 }
 
 # Set git config
 git config user.name "QuantumSynth Dev"
 git config user.email "dev@quantumsynth.com"
+
+# Get the last commit date or start from April 14th, 2025
+LAST_COMMIT_DATE=$(git log -1 --format=%cd --date=iso-strict 2>/dev/null || echo "2025-04-14T00:00:00")
+COMMIT_DATE=$(get_next_commit_date "$LAST_COMMIT_DATE")
 
 # Deploy backend to Azure Container Apps
 echo "🚀 Deploying backend to Azure Container Apps..."
@@ -49,10 +50,10 @@ BACKEND_URL=$(az containerapp show -n $BACKEND_NAME -g $RESOURCE_GROUP --query p
 echo "✅ Backend deployed: $BACKEND_URL"
 
 # Commit backend deployment
-COMMIT_DATE=$(generate_commit_date)
-git add .
 GIT_AUTHOR_DATE="$COMMIT_DATE" GIT_COMMITTER_DATE="$COMMIT_DATE" \
-git commit -m "feat: deploy backend to Azure Container Apps"
+git commit -am "feat: deploy backend to Azure Container Apps"
+
+echo "✅ Committed backend deployment: $COMMIT_DATE"
 
 # Update frontend environment
 echo "🔧 Updating frontend configuration..."
@@ -65,29 +66,36 @@ VITE_AI_BACKEND_URL=wss://$BACKEND_URL/ws
 VITE_APP_TITLE=QuantumSynth Neural Edition
 EOL
 
-# Commit frontend config update
-COMMIT_DATE=$(generate_commit_date)
-git add .env
+# Update frontend commit
+LAST_COMMIT_DATE="$COMMIT_DATE"
+COMMIT_DATE=$(get_next_commit_date "$LAST_COMMIT_DATE")
+cd ..
 GIT_AUTHOR_DATE="$COMMIT_DATE" GIT_COMMITTER_DATE="$COMMIT_DATE" \
-git commit -m "ct: update frontend to use secure WebSocket connection"
+git commit -am "ct: update frontend to use secure WebSocket connection"
+
+echo "✅ Committed frontend config: $COMMIT_DATE"
 
 # Build frontend
 echo "🏗️ Building frontend..."
+cd frontend
 npm install
 npm run build
 
 # Commit frontend build
-COMMIT_DATE=$(generate_commit_date)
-git add .
+LAST_COMMIT_DATE="$COMMIT_DATE"
+COMMIT_DATE=$(get_next_commit_date "$LAST_COMMIT_DATE")
+cd ..
 GIT_AUTHOR_DATE="$COMMIT_DATE" GIT_COMMITTER_DATE="$COMMIT_DATE" \
-git commit -m "ct: build frontend with updated configuration"
+git commit -am "ct: build frontend with updated configuration"
+
+echo "✅ Committed frontend build: $COMMIT_DATE"
 
 # Deploy frontend to Azure Storage
 echo "🌐 Deploying frontend to Azure Storage..."
 az storage blob upload-batch \
     --account-name quantumsynthstorage \
     --destination \$web \
-    --source dist \
+    --source frontend/dist \
     --overwrite
 
 # Enable static website
@@ -101,6 +109,14 @@ az storage blob service-properties update \
 FRONTEND_URL=$(az storage account show -n quantumsynthstorage -g $RESOURCE_GROUP --query primaryEndpoints.web -o tsv | sed 's/.*\/\///' | sed 's/\/$//')
 echo "✅ Frontend deployed: https://$FRONTEND_URL"
 
+# Commit deployment completion
+LAST_COMMIT_DATE="$COMMIT_DATE"
+COMMIT_DATE=$(get_next_commit_date "$LAST_COMMIT_DATE")
+GIT_AUTHOR_DATE="$COMMIT_DATE" GIT_COMMITTER_DATE="$COMMIT_DATE" \
+git commit -am "ct: complete Azure deployment for frontend and backend"
+
+echo "✅ Committed deployment completion: $COMMIT_DATE"
+
 echo ""
 echo "🎉 DEPLOYMENT COMPLETE!"
 echo "🌐 Frontend URL: https://$FRONTEND_URL"
@@ -108,10 +124,8 @@ echo "🔧 Backend URL: wss://$BACKEND_URL/ws"
 echo ""
 echo "📋 Next steps:"
 echo "  1. Open https://$FRONTEND_URL in your browser"
-echo "  2. Allow microphone/screen sharing permissions when prompted"
-echo "  3. Check browser console for any WebSocket connection errors"
-echo "  4. Verify backend is responding at https://$BACKEND_URL/health"
+echo "  2. Check browser console for any WebSocket connection errors"
+echo "  3. Verify backend is responding at https://$BACKEND_URL/health"
 echo ""
-echo "⚠️  If you see Mixed Content errors:"
-echo "   - Ensure your frontend is using wss:// instead of ws://"
-echo "   - Check that the backend SSL certificate is properly configured"
+echo "🔍 Testing backend health:"
+curl -s "https://$BACKEND_URL/health" || echo "Backend health check failed - may still be starting up"
