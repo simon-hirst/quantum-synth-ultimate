@@ -109,11 +109,7 @@ az storage blob service-properties update \
 FRONTEND_URL=$(az storage account show -n quantumsynthstorage -g $RESOURCE_GROUP --query primaryEndpoints.web -o tsv | sed 's/.*\/\///' | sed 's/\/$//')
 echo "✅ Frontend deployed: https://$FRONTEND_URL"
 
-# Commit deployment completion
-LAST_COMMIT_DATE="$COMMIT_DATE"
-COMMIT_DATE=$(get_next_commit_date "$LAST_COMMIT_DATE")
-GIT_AUTHOR_DATE="$COMMIT_DATE" GIT_COMMITTER_DATE="$COMMIT_DATE" \
-git commit -am "ct: complete Azure deployment for frontend and backend"
+
 
 echo "✅ Committed deployment completion: $COMMIT_DATE"
 
