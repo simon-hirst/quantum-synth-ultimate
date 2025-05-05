@@ -1,4 +1,10 @@
-import './style.css'
+// Import styles if they exist
+try {
+  import('./style.css');
+} catch (e) {
+  console.log('No stylesheet found, using default styles');
+}
+
 import { QuantumSynth } from './visualizer'
 
 // Wait for DOM to be fully loaded
