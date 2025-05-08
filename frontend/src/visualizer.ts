@@ -1,4 +1,4 @@
-export class Visualizer {
+export export class QuantumSynth {
     private renderer: any;
     private audioData: Uint8Array | null = null;
 
