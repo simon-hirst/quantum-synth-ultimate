@@ -3,6 +3,15 @@ export class QuantumSynth {
     private audioData: Uint8Array | null = null;
 
     constructor(canvas: HTMLCanvasElement) {
+    
+    initialize() {
+        console.log("QuantumSynth initialized");
+        this.setupEventListeners();
+    }
+    
+    private setupEventListeners() {
+        console.log("Setting up event listeners");
+    }
         console.log('Visualizer constructor called');
         try {
             const gl = canvas.getContext('webgl2');
