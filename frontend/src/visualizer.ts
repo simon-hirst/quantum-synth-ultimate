@@ -2,23 +2,47 @@ export class QuantumSynth {
     private renderer: any;
     private audioData: Uint8Array | null = null;
     private canvas: HTMLCanvasElement;
-    private ctx: CanvasRenderingContext2D | null;
+    private gl: WebGLRenderingContext | WebGL2RenderingContext | null;
 
     constructor(canvas: HTMLCanvasElement) {
         console.log('QuantumSynth constructor called');
         this.canvas = canvas;
-        this.ctx = this.canvas.getContext('2d');
         
+        // Ensure canvas is properly sized
+        this.resizeCanvas();
+        
+        // Try WebGL2 first, then fall back to WebGL1
         try {
-            const gl = canvas.getContext('webgl2');
-            if (!gl) {
-                console.error('WebGL2 not supported');
+            this.gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+            if (!this.gl) {
+                console.error('WebGL not supported');
+                this.setup2DFallback();
                 return;
             }
-            console.log('WebGL2 context created successfully');
-            this.setupShaders(gl);
+            console.log('WebGL context created successfully');
+            this.setupShaders();
         } catch (error) {
             console.error('QuantumSynth initialization failed:', error);
+            this.setup2DFallback();
+        }
+    }
+
+    private resizeCanvas() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+        console.log('Canvas resized to:', this.canvas.width, 'x', this.canvas.height);
+    }
+
+    private setup2DFallback() {
+        console.log('Setting up 2D fallback renderer');
+        // Simple 2D rendering fallback
+        const ctx = this.canvas.getContext('2d');
+        if (ctx) {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            ctx.fillStyle = '#0f0';
+            ctx.font = '16px Arial';
+            ctx.fillText('WebGL not available - Using 2D fallback', 20, 40);
         }
     }
 
@@ -29,10 +53,12 @@ export class QuantumSynth {
 
     private setupEventListeners() {
         console.log("Setting up event listeners");
-        // Add event listeners here
+        window.addEventListener('resize', () => this.resizeCanvas());
     }
 
-    private setupShaders(gl: WebGL2RenderingContext) {
+    private setupShaders() {
+        if (!this.gl) return;
+        
         console.log('Setting up shaders');
         const vertexShader = `
             attribute vec2 aPosition;
@@ -56,19 +82,19 @@ export class QuantumSynth {
         `;
 
         // Simple shader compilation
-        const vs = gl.createShader(gl.VERTEX_SHADER)!;
-        gl.shaderSource(vs, vertexShader);
-        gl.compileShader(vs);
+        const vs = this.gl.createShader(this.gl.VERTEX_SHADER)!;
+        this.gl.shaderSource(vs, vertexShader);
+        this.gl.compileShader(vs);
 
-        const fs = gl.createShader(gl.FRAGMENT_SHADER)!;
-        gl.shaderSource(fs, fragmentShader);
-        gl.compileShader(fs);
+        const fs = this.gl.createShader(this.gl.FRAGMENT_SHADER)!;
+        this.gl.shaderSource(fs, fragmentShader);
+        this.gl.compileShader(fs);
 
-        const program = gl.createProgram()!;
-        gl.attachShader(program, vs);
-        gl.attachShader(program, fs);
-        gl.linkProgram(program);
-        gl.useProgram(program);
+        const program = this.gl.createProgram()!;
+        this.gl.attachShader(program, vs);
+        this.gl.attachShader(program, fs);
+        this.gl.linkProgram(program);
+        this.gl.useProgram(program);
 
         console.log('Shaders compiled successfully');
     }
@@ -79,8 +105,25 @@ export class QuantumSynth {
     }
 
     render() {
-        if (this.audioData) {
+        if (this.audioData && this.gl) {
             console.log('Rendering audio visualization');
+            // Add rendering logic here
+        } else if (this.audioData) {
+            // 2D fallback rendering
+            const ctx = this.canvas.getContext('2d');
+            if (ctx) {
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Simple audio visualization
+                const barWidth = this.canvas.width / this.audioData.length;
+                ctx.fillStyle = '#4ecdc4';
+                
+                for (let i = 0; i < this.audioData.length; i++) {
+                    const barHeight = (this.audioData[i] / 255) * this.canvas.height / 2;
+                    ctx.fillRect(i * barWidth, this.canvas.height - barHeight, barWidth - 1, barHeight);
+                }
+            }
         }
     }
 }
