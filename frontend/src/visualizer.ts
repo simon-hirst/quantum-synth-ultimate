@@ -1,18 +1,14 @@
 export class QuantumSynth {
     private renderer: any;
     private audioData: Uint8Array | null = null;
+    private canvas: HTMLCanvasElement;
+    private ctx: CanvasRenderingContext2D | null;
 
     constructor(canvas: HTMLCanvasElement) {
-    
-    initialize() {
-        console.log("QuantumSynth initialized");
-        this.setupEventListeners();
-    }
-    
-    private setupEventListeners() {
-        console.log("Setting up event listeners");
-    }
-        console.log('Visualizer constructor called');
+        console.log('QuantumSynth constructor called');
+        this.canvas = canvas;
+        this.ctx = this.canvas.getContext('2d');
+        
         try {
             const gl = canvas.getContext('webgl2');
             if (!gl) {
@@ -22,8 +18,18 @@ export class QuantumSynth {
             console.log('WebGL2 context created successfully');
             this.setupShaders(gl);
         } catch (error) {
-            console.error('Visualizer initialization failed:', error);
+            console.error('QuantumSynth initialization failed:', error);
         }
+    }
+
+    initialize() {
+        console.log("QuantumSynth initialized");
+        this.setupEventListeners();
+    }
+
+    private setupEventListeners() {
+        console.log("Setting up event listeners");
+        // Add event listeners here
     }
 
     private setupShaders(gl: WebGL2RenderingContext) {
@@ -35,7 +41,7 @@ export class QuantumSynth {
             void main() {
                 float amplitude = uAmplitude[int(aPosition.x * 255.0)];
                 vAmplitude = amplitude;
-                gl_Position = vec4(aPosition.x * 2.0 - 1.0, aPosition.y * amplitude, 0.0, 1.0);
+                gl_Position = vec4(aPosition.x * 2.0 - 1.0, aPosition.y * amplitude, 0.0, 1.0);       
                 gl_PointSize = 2.0;
             }
         `;
@@ -53,17 +59,17 @@ export class QuantumSynth {
         const vs = gl.createShader(gl.VERTEX_SHADER)!;
         gl.shaderSource(vs, vertexShader);
         gl.compileShader(vs);
-        
+
         const fs = gl.createShader(gl.FRAGMENT_SHADER)!;
         gl.shaderSource(fs, fragmentShader);
         gl.compileShader(fs);
-        
+
         const program = gl.createProgram()!;
         gl.attachShader(program, vs);
         gl.attachShader(program, fs);
         gl.linkProgram(program);
         gl.useProgram(program);
-        
+
         console.log('Shaders compiled successfully');
     }
 
