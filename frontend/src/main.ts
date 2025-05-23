@@ -28,6 +28,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize QuantumSynth with the canvas
   const quantumSynth = new QuantumSynth(canvas);
   quantumSynth.initialize();
+
+  // Handle page unload
+  window.addEventListener('beforeunload', () => {
+    quantumSynth.disconnect();
+  });
 });
 
 // Handle window resize
