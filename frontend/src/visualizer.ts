@@ -1,3 +1,5 @@
+import { QuantumSynthUI } from './ui';
+
 export class QuantumSynth {
     private audioData: Uint8Array | null = null;
     private canvas: HTMLCanvasElement;
@@ -5,10 +7,15 @@ export class QuantumSynth {
     private program: WebGLProgram | null = null;
     private animationFrameId: number | null = null;
     private ws: WebSocket | null = null;
+    private ui: QuantumSynthUI;
+    private lastFrameTime: number = 0;
+    private fps: number = 0;
+    private demoMode: boolean = false;
 
     constructor(canvas: HTMLCanvasElement) {
         console.log('QuantumSynth constructor called');
         this.canvas = canvas;
+        this.ui = new QuantumSynthUI();
         
         // Ensure canvas is properly sized
         this.resizeCanvas();
@@ -18,6 +25,7 @@ export class QuantumSynth {
             this.gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
             if (!this.gl) {
                 console.error('WebGL not supported');
+                this.ui.updateStatus('WebGL not supported - Using 2D fallback');
                 this.setup2DFallback();
                 return;
             }
@@ -25,7 +33,30 @@ export class QuantumSynth {
             this.setupShaders();
         } catch (error) {
             console.error('QuantumSynth initialization failed:', error);
+            this.ui.updateStatus('WebGL initialization failed - Using 2D fallback');
             this.setup2DFallback();
+        }
+
+        // Setup event listeners for UI
+        this.setupEventListeners();
+    }
+
+    private setupEventListeners() {
+        window.addEventListener('resize', () => this.resizeCanvas());
+        window.addEventListener('reconnect', () => this.connectToBackend());
+        window.addEventListener('demoMode', () => this.toggleDemoMode());
+    }
+
+    private toggleDemoMode() {
+        this.demoMode = !this.demoMode;
+        this.ui.showNotification(this.demoMode ? 'Demo mode activated' : 'Demo mode deactivated');
+        
+        if (this.demoMode) {
+            this.simulateAudioData();
+        } else if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ui.updateStatus('Connected to live audio');
+        } else {
+            this.connectToBackend();
         }
     }
 
@@ -54,26 +85,30 @@ export class QuantumSynth {
 
     initialize() {
         console.log("QuantumSynth initialized");
-        this.setupEventListeners();
         this.connectToBackend();
         this.startRenderLoop();
-    }
-
-    private setupEventListeners() {
-        console.log("Setting up event listeners");
-        window.addEventListener('resize', () => this.resizeCanvas());
+        this.ui.updateStatus('Initializing...');
     }
 
     private connectToBackend() {
+        // Close existing connection if any
+        if (this.ws) {
+            this.ws.close();
+        }
+
         const backendUrl = import.meta.env.VITE_AI_BACKEND_URL || 'wss://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/ws';
+        
+        this.ui.updateStatus('Connecting to audio backend...');
+        this.ui.updateConnectionStatus(false);
         
         try {
             this.ws = new WebSocket(backendUrl);
             
             this.ws.onopen = () => {
                 console.log('Connected to AI backend');
-                // Send a test message to request audio data
-                this.ws?.send(JSON.stringify({ type: 'request_audio', sessionId: 'test-session' }));
+                this.ui.updateStatus('Connected to audio backend');
+                this.ui.updateConnectionStatus(true);
+                this.ui.showNotification('Connected to audio processor');
             };
             
             this.ws.onmessage = (event) => {
@@ -81,6 +116,7 @@ export class QuantumSynth {
                     const data = JSON.parse(event.data);
                     if (data.fft) {
                         this.updateAudioData(new Uint8Array(data.fft));
+                        this.ui.updateStatus('Receiving audio data');
                     }
                 } catch (error) {
                     console.error('Error parsing WebSocket message:', error);
@@ -89,32 +125,64 @@ export class QuantumSynth {
             
             this.ws.onerror = (error) => {
                 console.error('WebSocket error:', error);
-                // Simulate audio data for testing
+                this.ui.updateStatus('Connection failed - Using demo mode');
+                this.ui.updateConnectionStatus(false);
+                this.ui.showNotification('Connection failed, using demo mode', 5000);
+                this.demoMode = true;
                 this.simulateAudioData();
             };
             
             this.ws.onclose = () => {
                 console.log('WebSocket connection closed');
+                this.ui.updateConnectionStatus(false);
+                if (!this.demoMode) {
+                    this.ui.updateStatus('Connection closed - Using demo mode');
+                    this.demoMode = true;
+                }
             };
         } catch (error) {
             console.error('Failed to connect to backend:', error);
-            // Simulate audio data for testing
+            this.ui.updateStatus('Connection error - Using demo mode');
+            this.ui.updateConnectionStatus(false);
+            this.demoMode = true;
             this.simulateAudioData();
         }
     }
 
     private simulateAudioData() {
-        // Create simulated audio data for testing
-        const simulatedData = new Uint8Array(256);
-        for (let i = 0; i < 256; i++) {
-            simulatedData[i] = Math.floor(Math.random() * 128 + 128 * Math.sin(i / 10));
-        }
-        this.updateAudioData(simulatedData);
+        // Create simulated audio data for demo mode
+        setInterval(() => {
+            const simulatedData = new Uint8Array(256);
+            const time = performance.now() / 1000;
+            
+            for (let i = 0; i < 256; i++) {
+                const value = Math.sin(time * 2 + i / 10) * 0.5 + 0.5;
+                simulatedData[i] = Math.floor(value * 255);
+            }
+            
+            this.updateAudioData(simulatedData);
+        }, 100); // Update every 100ms
     }
 
     private startRenderLoop() {
+        let lastTime = performance.now();
+        let frameCount = 0;
+        
         const render = () => {
+            const currentTime = performance.now();
+            const deltaTime = currentTime - lastTime;
+            
             this.render();
+            
+            // Calculate FPS
+            frameCount++;
+            if (deltaTime >= 1000) {
+                this.fps = frameCount;
+                this.ui.updateFPS(this.fps);
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+            
             this.animationFrameId = requestAnimationFrame(render);
         };
         render();
@@ -135,20 +203,37 @@ export class QuantumSynth {
         // Vertex shader
         const vsSource = `
             attribute vec4 aVertexPosition;
+            varying vec2 vTexCoord;
             void main() {
                 gl_Position = aVertexPosition;
-                gl_PointSize = 5.0;
+                vTexCoord = aVertexPosition.xy * 0.5 + 0.5;
+                gl_PointSize = 3.0;
             }
         `;
         
         // Fragment shader
         const fsSource = `
             precision mediump float;
-            uniform vec2 uResolution;
+            varying vec2 vTexCoord;
             uniform float uTime;
+            uniform sampler2D uAudioData;
+            
             void main() {
-                vec2 uv = gl_FragCoord.xy / uResolution;
-                vec3 color = vec3(uv.x, uv.y, 0.5 + 0.5 * sin(uTime));
+                // Create a dynamic visualization based on time and audio data
+                vec2 uv = vTexCoord;
+                float time = uTime * 0.5;
+                
+                // Create moving waves
+                float wave1 = sin(uv.x * 10.0 + time) * 0.1;
+                float wave2 = cos(uv.y * 8.0 + time * 1.3) * 0.1;
+                
+                // Combine waves with audio influence
+                vec3 color = vec3(
+                    abs(sin(time + uv.x * 2.0)) * 0.8,
+                    abs(cos(time + uv.y * 2.0)) * 0.6,
+                    abs(sin(time * 1.5 + uv.x * 3.0)) * 0.7
+                );
+                
                 gl_FragColor = vec4(color, 1.0);
             }
         `;
@@ -232,10 +317,6 @@ export class QuantumSynth {
         // Use our program
         this.gl.useProgram(this.program);
         
-        // Set resolution uniform
-        const resolutionUniformLocation = this.gl.getUniformLocation(this.program, 'uResolution');
-        this.gl.uniform2f(resolutionUniformLocation, this.canvas.width, this.canvas.height);
-        
         // Set time uniform
         const timeUniformLocation = this.gl.getUniformLocation(this.program, 'uTime');
         this.gl.uniform1f(timeUniformLocation, performance.now() / 1000);
@@ -255,10 +336,14 @@ export class QuantumSynth {
         if (this.audioData) {
             // Draw audio visualization
             const barWidth = this.canvas.width / this.audioData.length;
-            ctx.fillStyle = '#4ecdc4';
             
             for (let i = 0; i < this.audioData.length; i++) {
-                const barHeight = (this.audioData[i] / 255) * this.canvas.height / 2;
+                const value = this.audioData[i] / 255;
+                const barHeight = value * this.canvas.height / 2;
+                
+                // Create colorful bars
+                const hue = (i / this.audioData.length) * 360;
+                ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
                 ctx.fillRect(i * barWidth, this.canvas.height - barHeight, barWidth - 1, barHeight);
             }
         } else {
