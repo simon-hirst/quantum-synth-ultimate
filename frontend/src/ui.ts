@@ -2,6 +2,7 @@ export class QuantumSynthUI {
     private container: HTMLDivElement;
     private statusElement: HTMLDivElement;
     private controlsElement: HTMLDivElement;
+    private screenshareBtn: HTMLButtonElement;
 
     constructor() {
         this.container = document.createElement('div');
@@ -15,20 +16,29 @@ export class QuantumSynthUI {
         this.container.style.padding = '15px';
         this.container.style.borderRadius = '10px';
         this.container.style.backdropFilter = 'blur(10px)';
+        this.container.style.maxWidth = '300px';
 
         this.statusElement = document.createElement('div');
         this.statusElement.innerHTML = `
             <h2 style="margin: 0 0 10px 0;">QuantumSynth Neural Edition</h2>
-            <div id="status">Connecting to audio source...</div>
-            <div id="connection">WebSocket: Disconnected</div>
+            <div id="status">Ready to start screen sharing</div>
+            <div id="connection">Status: Waiting for user action</div>
             <div id="fps">FPS: 0</div>
+            <div style="margin-top: 10px; font-size: 12px; color: #ccc;">
+                <p>For best results:</p>
+                <ul style="margin: 5px 0; padding-left: 15px;">
+                    <li>Share your entire screen</li>
+                    <li>Enable "Share audio" option</li>
+                    <li>Use Chrome or Edge for best compatibility</li>
+                </ul>
+            </div>
         `;
 
         this.controlsElement = document.createElement('div');
         this.controlsElement.style.marginTop = '15px';
         this.controlsElement.innerHTML = `
-            <button id="connectBtn" style="padding: 8px 16px; margin-right: 10px; background: #4ecdc4; border: none; border-radius: 5px; color: white; cursor: pointer;">
-                Reconnect
+            <button id="screenshareBtn" style="padding: 10px 16px; margin-right: 10px; background: #4ecdc4; border: none; border-radius: 5px; color: white; cursor: pointer; font-weight: bold;">
+                Start Screen Sharing
             </button>
             <button id="demoBtn" style="padding: 8px 16px; background: #ff6b6b; border: none; border-radius: 5px; color: white; cursor: pointer;">
                 Demo Mode
@@ -39,12 +49,13 @@ export class QuantumSynthUI {
         this.container.appendChild(this.controlsElement);
         document.body.appendChild(this.container);
 
+        this.screenshareBtn = document.getElementById('screenshareBtn') as HTMLButtonElement;
         this.setupEventListeners();
     }
 
     private setupEventListeners() {
-        document.getElementById('connectBtn')?.addEventListener('click', () => {
-            window.dispatchEvent(new CustomEvent('reconnect'));
+        this.screenshareBtn.addEventListener('click', () => {
+            window.dispatchEvent(new CustomEvent('startScreenshare'));
         });
 
         document.getElementById('demoBtn')?.addEventListener('click', () => {
@@ -57,9 +68,11 @@ export class QuantumSynthUI {
         if (statusEl) statusEl.textContent = status;
     }
 
-    updateConnectionStatus(connected: boolean) {
+    updateConnectionStatus(connected: boolean, message?: string) {
         const connectionEl = document.getElementById('connection');
-        if (connectionEl) connectionEl.textContent = `WebSocket: ${connected ? 'Connected' : 'Disconnected'}`;
+        if (connectionEl) {
+            connectionEl.textContent = message || `Status: ${connected ? 'Connected' : 'Disconnected'}`;
+        }
     }
 
     updateFPS(fps: number) {
@@ -85,5 +98,11 @@ export class QuantumSynthUI {
         setTimeout(() => {
             document.body.removeChild(notification);
         }, duration);
+    }
+
+    setScreenshareButtonEnabled(enabled: boolean) {
+        this.screenshareBtn.disabled = !enabled;
+        this.screenshareBtn.style.opacity = enabled ? '1' : '0.5';
+        this.screenshareBtn.textContent = enabled ? 'Start Screen Sharing' : 'Sharing...';
     }
 }

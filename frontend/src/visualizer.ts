@@ -6,11 +6,13 @@ export class QuantumSynth {
     private gl: WebGLRenderingContext | WebGL2RenderingContext | null;
     private program: WebGLProgram | null = null;
     private animationFrameId: number | null = null;
-    private ws: WebSocket | null = null;
     private ui: QuantumSynthUI;
     private lastFrameTime: number = 0;
     private fps: number = 0;
     private demoMode: boolean = false;
+    private audioContext: AudioContext | null = null;
+    private analyser: AnalyserNode | null = null;
+    private audioStream: MediaStream | null = null;
 
     constructor(canvas: HTMLCanvasElement) {
         console.log('QuantumSynth constructor called');
@@ -43,8 +45,94 @@ export class QuantumSynth {
 
     private setupEventListeners() {
         window.addEventListener('resize', () => this.resizeCanvas());
-        window.addEventListener('reconnect', () => this.connectToBackend());
         window.addEventListener('demoMode', () => this.toggleDemoMode());
+        window.addEventListener('startScreenshare', () => this.startScreenSharing());
+    }
+
+    private async startScreenSharing() {
+        this.ui.setScreenshareButtonEnabled(false);
+        this.ui.updateStatus('Requesting screen sharing...');
+        this.ui.updateConnectionStatus(false, 'Status: Requesting permissions');
+
+        try {
+            // Request screen sharing with audio
+            this.audioStream = await navigator.mediaDevices.getDisplayMedia({
+                video: true,
+                audio: true
+            });
+
+            this.ui.updateStatus('Screen sharing active');
+            this.ui.updateConnectionStatus(true, 'Status: Screen sharing active');
+            this.ui.showNotification('Screen sharing started successfully');
+
+            // Setup audio analysis
+            this.setupAudioAnalysis();
+
+            // Handle when the user stops sharing
+            this.audioStream.getVideoTracks()[0].onended = () => {
+                this.ui.updateStatus('Screen sharing ended');
+                this.ui.updateConnectionStatus(false, 'Status: Sharing ended');
+                this.ui.setScreenshareButtonEnabled(true);
+                this.ui.showNotification('Screen sharing ended');
+                this.cleanupAudio();
+            };
+
+        } catch (error) {
+            console.error('Screen sharing failed:', error);
+            this.ui.updateStatus('Screen sharing failed');
+            this.ui.updateConnectionStatus(false, 'Status: Permission denied');
+            this.ui.setScreenshareButtonEnabled(true);
+            this.ui.showNotification('Screen sharing failed or was cancelled', 5000);
+            
+            // Fall back to demo mode
+            this.demoMode = true;
+            this.simulateAudioData();
+        }
+    }
+
+    private setupAudioAnalysis() {
+        if (!this.audioStream) return;
+
+        try {
+            this.audioContext = new AudioContext();
+            this.analyser = this.audioContext.createAnalyser();
+            this.analyser.fftSize = 256;
+            
+            const source = this.audioContext.createMediaStreamSource(this.audioStream);
+            source.connect(this.analyser);
+            
+            // Start processing audio
+            this.processAudio();
+            
+        } catch (error) {
+            console.error('Audio analysis setup failed:', error);
+            this.ui.updateConnectionStatus(false, 'Status: Audio processing failed');
+            this.demoMode = true;
+            this.simulateAudioData();
+        }
+    }
+
+    private processAudio() {
+        if (!this.analyser) return;
+
+        const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+        
+        const process = () => {
+            this.analyser!.getByteFrequencyData(dataArray);
+            this.updateAudioData(dataArray);
+            requestAnimationFrame(process);
+        };
+        
+        process();
+    }
+
+    private cleanupAudio() {
+        if (this.audioContext) {
+            this.audioContext.close();
+            this.audioContext = null;
+        }
+        this.analyser = null;
+        this.audioStream = null;
     }
 
     private toggleDemoMode() {
@@ -52,11 +140,12 @@ export class QuantumSynth {
         this.ui.showNotification(this.demoMode ? 'Demo mode activated' : 'Demo mode deactivated');
         
         if (this.demoMode) {
+            this.ui.updateStatus('Demo mode active');
+            this.ui.updateConnectionStatus(true, 'Status: Demo mode');
             this.simulateAudioData();
-        } else if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ui.updateStatus('Connected to live audio');
         } else {
-            this.connectToBackend();
+            this.ui.updateStatus('Ready to start screen sharing');
+            this.ui.updateConnectionStatus(false, 'Status: Waiting for user action');
         }
     }
 
@@ -85,83 +174,23 @@ export class QuantumSynth {
 
     initialize() {
         console.log("QuantumSynth initialized");
-        this.connectToBackend();
         this.startRenderLoop();
-        this.ui.updateStatus('Initializing...');
-    }
-
-    private connectToBackend() {
-        // Close existing connection if any
-        if (this.ws) {
-            this.ws.close();
-        }
-
-        const backendUrl = import.meta.env.VITE_AI_BACKEND_URL || 'wss://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/ws';
-        
-        this.ui.updateStatus('Connecting to audio backend...');
-        this.ui.updateConnectionStatus(false);
-        
-        try {
-            this.ws = new WebSocket(backendUrl);
-            
-            this.ws.onopen = () => {
-                console.log('Connected to AI backend');
-                this.ui.updateStatus('Connected to audio backend');
-                this.ui.updateConnectionStatus(true);
-                this.ui.showNotification('Connected to audio processor');
-            };
-            
-            this.ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.fft) {
-                        this.updateAudioData(new Uint8Array(data.fft));
-                        this.ui.updateStatus('Receiving audio data');
-                    }
-                } catch (error) {
-                    console.error('Error parsing WebSocket message:', error);
-                }
-            };
-            
-            this.ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                this.ui.updateStatus('Connection failed - Using demo mode');
-                this.ui.updateConnectionStatus(false);
-                this.ui.showNotification('Connection failed, using demo mode', 5000);
-                this.demoMode = true;
-                this.simulateAudioData();
-            };
-            
-            this.ws.onclose = () => {
-                console.log('WebSocket connection closed');
-                this.ui.updateConnectionStatus(false);
-                if (!this.demoMode) {
-                    this.ui.updateStatus('Connection closed - Using demo mode');
-                    this.demoMode = true;
-                }
-            };
-        } catch (error) {
-            console.error('Failed to connect to backend:', error);
-            this.ui.updateStatus('Connection error - Using demo mode');
-            this.ui.updateConnectionStatus(false);
-            this.demoMode = true;
-            this.simulateAudioData();
-        }
+        this.ui.updateStatus('Ready to start screen sharing');
     }
 
     private simulateAudioData() {
-        // Create simulated audio data for demo mode
-        setInterval(() => {
-            const simulatedData = new Uint8Array(256);
+        // Clear any existing interval
+        if (this.demoMode) {
             const time = performance.now() / 1000;
             
+            const simulatedData = new Uint8Array(256);
             for (let i = 0; i < 256; i++) {
                 const value = Math.sin(time * 2 + i / 10) * 0.5 + 0.5;
                 simulatedData[i] = Math.floor(value * 255);
             }
             
             this.updateAudioData(simulatedData);
-        }, 100); // Update every 100ms
+        }
     }
 
     private startRenderLoop() {
@@ -181,6 +210,11 @@ export class QuantumSynth {
                 this.ui.updateFPS(this.fps);
                 frameCount = 0;
                 lastTime = currentTime;
+            }
+            
+            // If in demo mode, simulate audio data each frame
+            if (this.demoMode) {
+                this.simulateAudioData();
             }
             
             this.animationFrameId = requestAnimationFrame(render);
@@ -216,10 +250,9 @@ export class QuantumSynth {
             precision mediump float;
             varying vec2 vTexCoord;
             uniform float uTime;
-            uniform sampler2D uAudioData;
             
             void main() {
-                // Create a dynamic visualization based on time and audio data
+                // Create a dynamic visualization based on time
                 vec2 uv = vTexCoord;
                 float time = uTime * 0.5;
                 
@@ -227,7 +260,7 @@ export class QuantumSynth {
                 float wave1 = sin(uv.x * 10.0 + time) * 0.1;
                 float wave2 = cos(uv.y * 8.0 + time * 1.3) * 0.1;
                 
-                // Combine waves with audio influence
+                // Combine waves
                 vec3 color = vec3(
                     abs(sin(time + uv.x * 2.0)) * 0.8,
                     abs(cos(time + uv.y * 2.0)) * 0.6,
@@ -351,14 +384,12 @@ export class QuantumSynth {
             ctx.fillStyle = '#fff';
             ctx.font = '16px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText('Waiting for audio data...', this.canvas.width / 2, this.canvas.height / 2);
+            ctx.fillText('Start screen sharing to begin visualization', this.canvas.width / 2, this.canvas.height / 2);
         }
     }
 
     disconnect() {
         this.stopRenderLoop();
-        if (this.ws) {
-            this.ws.close();
-        }
+        this.cleanupAudio();
     }
 }
