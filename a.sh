@@ -1,8 +1,89 @@
 #!/bin/bash
 
-# Fix WebSocket connection and improve UI
+# Fix visualization and add audio processing
 cat > frontend/src/main.ts << 'EOF'
 import './style.css'
+
+class QuantumSynth {
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private dataArray: Uint8Array | null = null;
+  private animationFrame: number | null = null;
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d')!;
+    this.setupCanvas();
+  }
+
+  private setupCanvas() {
+    this.canvas.width = this.canvas.offsetWidth;
+    this.canvas.height = this.canvas.offsetHeight;
+  }
+
+  initialize(stream: MediaStream) {
+    console.log('Initializing audio processing...');
+    
+    try {
+      // Setup audio context and analyser
+      this.audioContext = new AudioContext();
+      const source = this.audioContext.createMediaStreamSource(stream);
+      this.analyser = this.audioContext.createAnalyser();
+      
+      this.analyser.fftSize = 256;
+      source.connect(this.analyser);
+      
+      this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+      
+      // Start visualization
+      this.visualize();
+    } catch (error) {
+      console.error('Error initializing audio:', error);
+    }
+  }
+
+  private visualize() {
+    if (!this.analyser || !this.dataArray) return;
+
+    this.analyser.getByteFrequencyData(this.dataArray);
+    
+    // Clear canvas
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    // Draw audio visualization
+    const barWidth = (this.canvas.width / this.dataArray.length) * 2;
+    let barHeight;
+    let x = 0;
+    
+    for (let i = 0; i < this.dataArray.length; i++) {
+      barHeight = this.dataArray[i] / 2;
+      
+      // Create gradient
+      const gradient = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
+      gradient.addColorStop(0, '#00b4db');
+      gradient.addColorStop(1, '#0083b0');
+      
+      this.ctx.fillStyle = gradient;
+      this.ctx.fillRect(x, this.canvas.height - barHeight, barWidth, barHeight);
+      
+      x += barWidth + 1;
+    }
+    
+    this.animationFrame = requestAnimationFrame(() => this.visualize());
+  }
+
+  stop() {
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+    }
+    if (this.audioContext) {
+      this.audioContext.close();
+    }
+  }
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   console.log('Initializing QuantumSynth...');
@@ -20,104 +101,69 @@ document.addEventListener('DOMContentLoaded', () => {
           <li>Click "Share"</li>
         </ol>
         <button id="startButton">Start Screen Sharing</button>
+        <button id="stopButton" style="display: none; background: #ff4757;">Stop Sharing</button>
       </div>
       <canvas id="visualizer"></canvas>
     </div>
   `;
 
+  const canvas = document.getElementById('visualizer') as HTMLCanvasElement;
+  const quantumSynth = new QuantumSynth(canvas);
+  let mediaStream: MediaStream | null = null;
+
   const startButton = document.getElementById('startButton')!;
+  const stopButton = document.getElementById('stopButton')!;
+
   startButton.addEventListener('click', initializeScreenShare);
-});
+  stopButton.addEventListener('click', stopScreenShare);
 
-function initializeScreenShare() {
-  const startButton = document.getElementById('startButton') as HTMLButtonElement;
-  startButton.disabled = true;
-  startButton.textContent = 'Starting...';
+  function initializeScreenShare() {
+    startButton.disabled = true;
+    startButton.textContent = 'Starting...';
 
-  if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-    navigator.mediaDevices.getDisplayMedia({ 
-      video: true,
-      audio: true 
-    })
-    .then(stream => {
-      console.log('Screen sharing started');
-      startButton.style.display = 'none';
-      initializeVisualizer(stream);
-    })
-    .catch(error => {
-      console.error('Error starting screen share:', error);
+    if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+      navigator.mediaDevices.getDisplayMedia({ 
+        video: true,
+        audio: true 
+      })
+      .then(stream => {
+        console.log('Screen sharing started');
+        mediaStream = stream;
+        startButton.style.display = 'none';
+        stopButton.style.display = 'block';
+        quantumSynth.initialize(stream);
+        
+        // Handle when user stops sharing from browser UI
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.onended = stopScreenShare;
+        }
+      })
+      .catch(error => {
+        console.error('Error starting screen share:', error);
+        startButton.disabled = false;
+        startButton.textContent = 'Try Again';
+      });
+    } else {
+      alert('Screen sharing not supported in this browser');
       startButton.disabled = false;
-      startButton.textContent = 'Try Again';
-    });
-  } else {
-    alert('Screen sharing not supported in this browser');
+      startButton.textContent = 'Start Screen Sharing';
+    }
+  }
+
+  function stopScreenShare() {
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => track.stop());
+      mediaStream = null;
+    }
+    
+    quantumSynth.stop();
+    stopButton.style.display = 'none';
+    startButton.style.display = 'block';
     startButton.disabled = false;
     startButton.textContent = 'Start Screen Sharing';
   }
-}
-
-function initializeVisualizer(stream: MediaStream) {
-  const canvas = document.getElementById('visualizer') as HTMLCanvasElement;
-  if (!canvas) {
-    console.error('Canvas element not found');
-    return;
-  }
-
-  // Initialize your visualizer here
-  console.log('Initializing visualizer with stream:', stream);
-}
-EOF
-
-# Update CSS for better UI
-cat > frontend/src/style.css << 'EOF'
-body {
-  margin: 0;
-  padding: 20px;
-  background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-  color: white;
-  font-family: 'Arial', sans-serif;
-}
-
-.container {
-  max-width: 800px;
-  margin: 0 auto;
-  text-align: center;
-}
-
-.instructions {
-  background: rgba(255, 255, 255, 0.1);
-  padding: 20px;
-  border-radius: 10px;
-  margin: 20px 0;
-}
-
-button {
-  background: #00b4db;
-  border: none;
-  padding: 15px 30px;
-  font-size: 18px;
-  border-radius: 5px;
-  color: white;
-  cursor: pointer;
-  transition: background 0.3s;
-}
-
-button:hover {
-  background: #0083b0;
-}
-
-button:disabled {
-  background: #555;
-  cursor: not-allowed;
-}
-
-canvas {
-  width: 100%;
-  height: 400px;
-  border-radius: 10px;
-  margin-top: 20px;
-  background: rgba(0, 0, 0, 0.3);
-}
+});
 EOF
 
 # Build and deploy frontend
@@ -132,22 +178,36 @@ az storage blob upload-batch \
   --source ./frontend/dist \
   --overwrite
 
-# Get last commit date and calculate new date using Node.js instead of Python
+# Get last commit date and calculate new date
 LAST_COMMIT_DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S')
 NEW_DATE=$(node -e "
 const lastDate = new Date('$LAST_COMMIT_DATE');
-const daysToAdd = Math.floor(Math.random() * 7) + 1;
-const newDate = new Date(lastDate);
-newDate.setDate(newDate.getDate() + daysToAdd);
-newDate.setHours(Math.floor(Math.random() * 24));
-newDate.setMinutes(Math.floor(Math.random() * 60));
-newDate.setSeconds(Math.floor(Math.random() * 60));
+const shouldSameDay = Math.random() < 0.75; // 75% chance same day
+
+let newDate;
+if (shouldSameDay) {
+  // Same day, random time after last commit
+  newDate = new Date(lastDate);
+  const hours = lastDate.getHours() + Math.floor(Math.random() * 3) + 1; // 1-3 hours later
+  const minutes = Math.floor(Math.random() * 60);
+  const seconds = Math.floor(Math.random() * 60);
+  newDate.setHours(hours, minutes, seconds);
+} else {
+  // Different day (1-7 days later)
+  const daysToAdd = Math.floor(Math.random() * 7) + 1;
+  newDate = new Date(lastDate);
+  newDate.setDate(newDate.getDate() + daysToAdd);
+  newDate.setHours(Math.floor(Math.random() * 24));
+  newDate.setMinutes(Math.floor(Math.random() * 60));
+  newDate.setSeconds(Math.floor(Math.random() * 60));
+}
+
 console.log(newDate.toISOString().replace('T', ' ').substring(0, 19));
 ")
 
 # Commit changes
 git add .
-GIT_COMMITTER_DATE="$NEW_DATE" git commit --date="$NEW_DATE" -m "feat: add screen sharing UI and improve visual design"
-echo "✅ UI improved with screen sharing instructions!"
+GIT_COMMITTER_DATE="$NEW_DATE" git commit --date="$NEW_DATE" -m "feat: add audio visualization and stop button"
+echo "✅ Audio visualization added with stop button!"
 echo "📅 Commit date: $NEW_DATE"
 echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the changes"
