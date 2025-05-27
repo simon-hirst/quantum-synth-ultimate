@@ -15,12 +15,13 @@ class QuantumSynth {
   }
 
   private setupCanvas() {
-    this.canvas.width = this.canvas.offsetWidth;
-    this.canvas.height = this.canvas.offsetHeight;
+    this.canvas.width = this.canvas.offsetWidth * 2;
+    this.canvas.height = this.canvas.offsetHeight * 2;
+    this.ctx.scale(2, 2);
   }
 
   initialize(stream: MediaStream) {
-    console.log('Initializing audio processing...');
+    console.log('Initializing quantum audio processing...');
     
     try {
       // Setup audio context and analyser
@@ -28,7 +29,7 @@ class QuantumSynth {
       const source = this.audioContext.createMediaStreamSource(stream);
       this.analyser = this.audioContext.createAnalyser();
       
-      this.analyser.fftSize = 256;
+      this.analyser.fftSize = 512;
       source.connect(this.analyser);
       
       this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
@@ -36,7 +37,7 @@ class QuantumSynth {
       // Start visualization
       this.visualize();
     } catch (error) {
-      console.error('Error initializing audio:', error);
+      console.error('Quantum audio initialization failed:', error);
     }
   }
 
@@ -45,28 +46,59 @@ class QuantumSynth {
 
     this.analyser.getByteFrequencyData(this.dataArray);
     
-    // Clear canvas
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    // Clear canvas with a subtle gradient
+    const gradient = this.ctx.createRadialGradient(
+      this.canvas.width/4, this.canvas.height/4, 0,
+      this.canvas.width/4, this.canvas.height/4, this.canvas.width/2
+    );
+    gradient.addColorStop(0, 'rgba(10, 10, 40, 0.1)');
+    gradient.addColorStop(1, 'rgba(5, 5, 20, 0.3)');
     
-    // Draw audio visualization
-    const barWidth = (this.canvas.width / this.dataArray.length) * 2;
-    let barHeight;
-    let x = 0;
+    this.ctx.fillStyle = gradient;
+    this.ctx.fillRect(0, 0, this.canvas.width/2, this.canvas.height/2);
     
+    // Draw advanced audio visualization
+    const centerX = this.canvas.width / 4;
+    const centerY = this.canvas.height / 4;
+    const radius = Math.min(centerX, centerY) * 0.8;
+    
+    this.ctx.save();
+    this.ctx.translate(centerX, centerY);
+    
+    // Draw circular waveform
     for (let i = 0; i < this.dataArray.length; i++) {
-      barHeight = this.dataArray[i] / 2;
+      const amplitude = this.dataArray[i] / 255;
+      const angle = (i * 2 * Math.PI) / this.dataArray.length;
       
-      // Create gradient
-      const gradient = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
-      gradient.addColorStop(0, '#00b4db');
-      gradient.addColorStop(1, '#0083b0');
+      const x1 = Math.cos(angle) * radius;
+      const y1 = Math.sin(angle) * radius;
+      const x2 = Math.cos(angle) * (radius + amplitude * radius * 0.5);
+      const y2 = Math.sin(angle) * (radius + amplitude * radius * 0.5);
       
-      this.ctx.fillStyle = gradient;
-      this.ctx.fillRect(x, this.canvas.height - barHeight, barWidth, barHeight);
+      // Create gradient for each segment
+      const segmentGradient = this.ctx.createLinearGradient(x1, y1, x2, y2);
+      segmentGradient.addColorStop(0, `hsl(${i * 360 / this.dataArray.length}, 100%, 70%)`);
+      segmentGradient.addColorStop(1, `hsl(${(i * 360 / this.dataArray.length + 60) % 360}, 100%, 50%)`);
       
-      x += barWidth + 1;
+      this.ctx.strokeStyle = segmentGradient;
+      this.ctx.lineWidth = 2 + amplitude * 3;
+      this.ctx.beginPath();
+      this.ctx.moveTo(x1, y1);
+      this.ctx.lineTo(x2, y2);
+      this.ctx.stroke();
     }
+    
+    // Draw central quantum core
+    const coreGradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 0.2);
+    coreGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+    coreGradient.addColorStop(1, 'rgba(100, 200, 255, 0.5)');
+    
+    this.ctx.beginPath();
+    this.ctx.arc(0, 0, radius * 0.2, 0, 2 * Math.PI);
+    this.ctx.fillStyle = coreGradient;
+    this.ctx.fill();
+    
+    this.ctx.restore();
     
     this.animationFrame = requestAnimationFrame(() => this.visualize());
   }
@@ -82,24 +114,77 @@ class QuantumSynth {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('Initializing QuantumSynth...');
+  console.log('Initializing QuantumSynth Neural Edition...');
   
   const app = document.querySelector<HTMLDivElement>('#app')!;
   app.innerHTML = `
-    <div class="container">
-      <h1>QuantumSynth Neural Edition</h1>
-      <div class="instructions">
-        <h2>Setup Instructions:</h2>
-        <ol>
-          <li>Click "Start Screen Sharing" below</li>
-          <li>Select your entire screen</li>
-          <li>Check "Share audio" option</li>
-          <li>Click "Share"</li>
-        </ol>
-        <button id="startButton">Start Screen Sharing</button>
-        <button id="stopButton" style="display: none; background: #ff4757;">Stop Sharing</button>
+    <div class="quantum-container">
+      <div class="quantum-header">
+        <h1 class="quantum-title">QuantumSynth <span class="neural-edition">Neural Edition</span></h1>
+        <p class="quantum-subtitle">Real-time audio visualization with quantum-inspired algorithms</p>
       </div>
-      <canvas id="visualizer"></canvas>
+      
+      <div class="quantum-content">
+        <div class="quantum-card">
+          <div class="card-header">
+            <h2>Quantum Capture Setup</h2>
+            <div class="pulse-dot"></div>
+          </div>
+          
+          <div class="card-body">
+            <div class="instructions">
+              <div class="instruction-step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                  <h3>Initiate Quantum Capture</h3>
+                  <p>Click the button below to begin screen sharing</p>
+                </div>
+              </div>
+              
+              <div class="instruction-step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                  <h3>Select Entire Screen</h3>
+                  <p>Choose your complete display for optimal results</p>
+                </div>
+              </div>
+              
+              <div class="instruction-step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                  <h3>Enable Audio Resonance</h3>
+                  <p>Check "Share audio" to capture sound frequencies</p>
+                </div>
+              </div>
+            </div>
+            
+            <button id="startButton" class="quantum-btn primary">
+              <span class="btn-icon">⚡</span>
+              Initiate Quantum Capture
+            </button>
+            
+            <button id="stopButton" class="quantum-btn secondary" style="display: none;">
+              <span class="btn-icon">⏹️</span>
+              Terminate Connection
+            </button>
+          </div>
+        </div>
+        
+        <div class="visualization-container">
+          <div class="viz-header">
+            <h3>Quantum Resonance Visualization</h3>
+            <div class="status-indicator">
+              <span class="status-dot"></span>
+              <span class="status-text">Standby</span>
+            </div>
+          </div>
+          <canvas id="visualizer"></canvas>
+        </div>
+      </div>
+      
+      <div class="quantum-footer">
+        <p>Powered by Quantum Audio Processing • v1.0.0</p>
+      </div>
     </div>
   `;
 
@@ -109,13 +194,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const startButton = document.getElementById('startButton')!;
   const stopButton = document.getElementById('stopButton')!;
+  const statusDot = document.querySelector('.status-dot')!;
+  const statusText = document.querySelector('.status-text')!;
 
   startButton.addEventListener('click', initializeScreenShare);
   stopButton.addEventListener('click', stopScreenShare);
 
   function initializeScreenShare() {
     startButton.disabled = true;
-    startButton.textContent = 'Starting...';
+    startButton.innerHTML = '<span class="btn-icon">⏳</span> Initializing...';
+    statusDot.classList.add('pending');
+    statusText.textContent = 'Initializing';
 
     if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
       navigator.mediaDevices.getDisplayMedia({ 
@@ -123,10 +212,13 @@ document.addEventListener('DOMContentLoaded', () => {
         audio: true 
       })
       .then(stream => {
-        console.log('Screen sharing started');
+        console.log('Quantum capture established');
         mediaStream = stream;
         startButton.style.display = 'none';
         stopButton.style.display = 'block';
+        statusDot.classList.remove('pending');
+        statusDot.classList.add('active');
+        statusText.textContent = 'Active';
         quantumSynth.initialize(stream);
         
         // Handle when user stops sharing from browser UI
@@ -136,14 +228,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       })
       .catch(error => {
-        console.error('Error starting screen share:', error);
+        console.error('Quantum capture failed:', error);
         startButton.disabled = false;
-        startButton.textContent = 'Try Again';
+        startButton.innerHTML = '<span class="btn-icon">⚡</span> Retry Quantum Capture';
+        statusDot.classList.remove('pending');
+        statusText.textContent = 'Error';
       });
     } else {
-      alert('Screen sharing not supported in this browser');
+      alert('Quantum capture not supported in this browser');
       startButton.disabled = false;
-      startButton.textContent = 'Start Screen Sharing';
+      startButton.innerHTML = '<span class="btn-icon">⚡</span> Initiate Quantum Capture';
+      statusText.textContent = 'Unsupported';
     }
   }
 
@@ -157,6 +252,8 @@ document.addEventListener('DOMContentLoaded', () => {
     stopButton.style.display = 'none';
     startButton.style.display = 'block';
     startButton.disabled = false;
-    startButton.textContent = 'Start Screen Sharing';
+    startButton.innerHTML = '<span class="btn-icon">⚡</span> Initiate Quantum Capture';
+    statusDot.classList.remove('active');
+    statusText.textContent = 'Standby';
   }
 });
