@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Create the complete main.ts file with GitHub attribution
+# Create three different visualizations with random transitions
 cat > frontend/src/main.ts << 'EOF'
 import './style.css'
 
@@ -11,10 +11,15 @@ class QuantumSynth {
   private analyser: AnalyserNode | null = null;
   private dataArray: Uint8Array | null = null;
   private animationFrame: number | null = null;
+  private currentVisualization: number = 0;
+  private visualizationTimer: number | null = null;
+  private visualizationNames = ['Quantum Resonance', 'Neural Particles', 'Temporal Waveforms'];
+  private visualizationElement: HTMLElement;
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, visualizationElement: HTMLElement) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
+    this.visualizationElement = visualizationElement;
     this.setupCanvas();
   }
 
@@ -38,11 +43,24 @@ class QuantumSynth {
       
       this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
       
-      // Start visualization
+      // Start visualization and switching
+      this.startVisualizationSwitching();
       this.visualize();
     } catch (error) {
       console.error('Quantum audio initialization failed:', error);
     }
+  }
+
+  private startVisualizationSwitching() {
+    // Switch visualizations every 10-15 seconds
+    const switchVisualization = () => {
+      this.currentVisualization = (this.currentVisualization + 1) % 3;
+      this.visualizationElement.textContent = this.visualizationNames[this.currentVisualization];
+      this.visualizationTimer = setTimeout(switchVisualization, 10000 + Math.random() * 5000);
+    };
+    
+    this.visualizationElement.textContent = this.visualizationNames[this.currentVisualization];
+    this.visualizationTimer = setTimeout(switchVisualization, 10000 + Math.random() * 5000);
   }
 
   private visualize() {
@@ -50,18 +68,28 @@ class QuantumSynth {
 
     this.analyser.getByteFrequencyData(this.dataArray);
     
-    // Clear canvas with a subtle gradient
-    const gradient = this.ctx.createRadialGradient(
-      this.canvas.width/4, this.canvas.height/4, 0,
-      this.canvas.width/4, this.canvas.height/4, this.canvas.width/2
-    );
-    gradient.addColorStop(0, 'rgba(10, 10, 40, 0.1)');
-    gradient.addColorStop(1, 'rgba(5, 5, 20, 0.3)');
-    
-    this.ctx.fillStyle = gradient;
+    // Clear canvas
+    this.ctx.fillStyle = 'rgba(5, 8, 17, 0.1)';
     this.ctx.fillRect(0, 0, this.canvas.width/2, this.canvas.height/2);
     
-    // Draw advanced audio visualization
+    // Call appropriate visualization based on current mode
+    switch (this.currentVisualization) {
+      case 0:
+        this.drawQuantumResonance();
+        break;
+      case 1:
+        this.drawNeuralParticles();
+        break;
+      case 2:
+        this.drawTemporalWaveforms();
+        break;
+    }
+    
+    this.animationFrame = requestAnimationFrame(() => this.visualize());
+  }
+
+  private drawQuantumResonance() {
+    // Circular quantum resonance visualization
     const centerX = this.canvas.width / 4;
     const centerY = this.canvas.height / 4;
     const radius = Math.min(centerX, centerY) * 0.8;
@@ -70,9 +98,9 @@ class QuantumSynth {
     this.ctx.translate(centerX, centerY);
     
     // Draw circular waveform
-    for (let i = 0; i < this.dataArray.length; i++) {
-      const amplitude = this.dataArray[i] / 255;
-      const angle = (i * 2 * Math.PI) / this.dataArray.length;
+    for (let i = 0; i < this.dataArray!.length; i++) {
+      const amplitude = this.dataArray![i] / 255;
+      const angle = (i * 2 * Math.PI) / this.dataArray!.length;
       
       const x1 = Math.cos(angle) * radius;
       const y1 = Math.sin(angle) * radius;
@@ -81,8 +109,8 @@ class QuantumSynth {
       
       // Create gradient for each segment
       const segmentGradient = this.ctx.createLinearGradient(x1, y1, x2, y2);
-      segmentGradient.addColorStop(0, `hsl(${i * 360 / this.dataArray.length}, 100%, 70%)`);
-      segmentGradient.addColorStop(1, `hsl(${(i * 360 / this.dataArray.length + 60) % 360}, 100%, 50%)`);
+      segmentGradient.addColorStop(0, `hsl(${i * 360 / this.dataArray!.length}, 100%, 70%)`);
+      segmentGradient.addColorStop(1, `hsl(${(i * 360 / this.dataArray!.length + 60) % 360}, 100%, 50%)`);
       
       this.ctx.strokeStyle = segmentGradient;
       this.ctx.lineWidth = 2 + amplitude * 3;
@@ -103,13 +131,111 @@ class QuantumSynth {
     this.ctx.fill();
     
     this.ctx.restore();
+  }
+
+  private drawNeuralParticles() {
+    // Neural particle system visualization
+    const particleCount = 100;
+    const centerX = this.canvas.width / 4;
+    const centerY = this.canvas.height / 4;
     
-    this.animationFrame = requestAnimationFrame(() => this.visualize());
+    for (let i = 0; i < particleCount; i++) {
+      const amplitude = this.dataArray![i % this.dataArray!.length] / 255;
+      const angle = (i * 2 * Math.PI) / particleCount;
+      const distance = amplitude * 150;
+      
+      const x = centerX + Math.cos(angle) * distance;
+      const y = centerY + Math.sin(angle) * distance;
+      const size = 2 + amplitude * 8;
+      
+      // Create gradient for particle
+      const gradient = this.ctx.createRadialGradient(x, y, 0, x, y, size);
+      gradient.addColorStop(0, `hsla(${i * 360 / particleCount}, 100%, 70%, 0.8)`);
+      gradient.addColorStop(1, `hsla(${(i * 360 / particleCount + 60) % 360}, 100%, 50%, 0.2)`);
+      
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, size, 0, 2 * Math.PI);
+      this.ctx.fillStyle = gradient;
+      this.ctx.fill();
+      
+      // Draw connecting lines between particles
+      if (i > 0 && amplitude > 0.3) {
+        const prevAmplitude = this.dataArray![(i-1) % this.dataArray!.length] / 255;
+        const prevAngle = ((i-1) * 2 * Math.PI) / particleCount;
+        const prevDistance = prevAmplitude * 150;
+        const prevX = centerX + Math.cos(prevAngle) * prevDistance;
+        const prevY = centerY + Math.sin(prevAngle) * prevDistance;
+        
+        this.ctx.beginPath();
+        this.ctx.moveTo(prevX, prevY);
+        this.ctx.lineTo(x, y);
+        this.ctx.strokeStyle = `hsla(${i * 360 / particleCount}, 100%, 60%, ${0.2 + amplitude * 0.6})`;
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
+      }
+    }
+  }
+
+  private drawTemporalWaveforms() {
+    // Temporal waveform visualization
+    const centerY = this.canvas.height / 4;
+    const width = this.canvas.width / 2;
+    const height = this.canvas.height / 2;
+    
+    // Draw background gradient
+    const bgGradient = this.ctx.createLinearGradient(0, 0, width, 0);
+    bgGradient.addColorStop(0, 'rgba(0, 20, 40, 0.3)');
+    bgGradient.addColorStop(1, 'rgba(0, 40, 80, 0.3)');
+    
+    this.ctx.fillStyle = bgGradient;
+    this.ctx.fillRect(0, centerY - height/2, width, height);
+    
+    // Draw waveform
+    this.ctx.beginPath();
+    this.ctx.moveTo(0, centerY);
+    
+    for (let i = 0; i < this.dataArray!.length; i++) {
+      const amplitude = this.dataArray![i] / 255;
+      const x = (i / this.dataArray!.length) * width;
+      const y = centerY - (amplitude - 0.5) * height;
+      
+      if (i === 0) {
+        this.ctx.moveTo(x, y);
+      } else {
+        this.ctx.lineTo(x, y);
+      }
+    }
+    
+    // Create waveform gradient
+    const waveformGradient = this.ctx.createLinearGradient(0, 0, width, 0);
+    waveformGradient.addColorStop(0, '#00f3ff');
+    waveformGradient.addColorStop(0.5, '#ff00d6');
+    waveformGradient.addColorStop(1, '#00ff9d');
+    
+    this.ctx.strokeStyle = waveformGradient;
+    this.ctx.lineWidth = 3;
+    this.ctx.stroke();
+    
+    // Fill waveform
+    this.ctx.lineTo(width, centerY);
+    this.ctx.lineTo(0, centerY);
+    this.ctx.closePath();
+    
+    const fillGradient = this.ctx.createLinearGradient(0, 0, width, 0);
+    fillGradient.addColorStop(0, 'rgba(0, 243, 255, 0.2)');
+    fillGradient.addColorStop(0.5, 'rgba(255, 0, 214, 0.2)');
+    fillGradient.addColorStop(1, 'rgba(0, 255, 157, 0.2)');
+    
+    this.ctx.fillStyle = fillGradient;
+    this.ctx.fill();
   }
 
   stop() {
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
+    }
+    if (this.visualizationTimer) {
+      clearTimeout(this.visualizationTimer);
     }
     if (this.audioContext) {
       this.audioContext.close();
@@ -182,6 +308,10 @@ document.addEventListener('DOMContentLoaded', () => {
               <span class="status-text">Standby</span>
             </div>
           </div>
+          <div class="viz-mode">
+            <span class="mode-label">Active Mode:</span>
+            <span id="currentVisualization">Quantum Resonance</span>
+          </div>
           <canvas id="visualizer"></canvas>
         </div>
       </div>
@@ -194,7 +324,8 @@ document.addEventListener('DOMContentLoaded', () => {
   `;
 
   const canvas = document.getElementById('visualizer') as HTMLCanvasElement;
-  const quantumSynth = new QuantumSynth(canvas);
+  const visualizationElement = document.getElementById('currentVisualization')!;
+  const quantumSynth = new QuantumSynth(canvas, visualizationElement);
   let mediaStream: MediaStream | null = null;
 
   const startButton = document.getElementById('startButton')!;
@@ -264,7 +395,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 EOF
 
-# Add styles for the GitHub attribution
+# Add styles for the visualization mode indicator
 cat > frontend/src/style.css << 'EOF'
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&family=Exo+2:wght@300;400;500;600&display=swap');
 
@@ -468,13 +599,34 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .viz-header h3 {
   font-family: 'Orbitron', sans-serif;
   font-size: 1.3rem;
   color: var(--primary);
+}
+
+.viz-mode {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 243, 255, 0.1);
+}
+
+.mode-label {
+  font-weight: 600;
+  margin-right: 0.5rem;
+  color: var(--primary);
+}
+
+#currentVisualization {
+  color: var(--accent);
+  font-weight: 500;
 }
 
 .status-indicator {
@@ -594,7 +746,7 @@ console.log(newDate.toISOString().replace('T', ' ').substring(0, 19));
 
 # Commit changes
 git add .
-GIT_COMMITTER_DATE="$NEW_DATE" git commit --date="$NEW_DATE" -m "docs: add GitHub attribution to footer"
-echo "✅ Added GitHub attribution to footer!"
+GIT_COMMITTER_DATE="$NEW_DATE" git commit --date="$NEW_DATE" -m "feat: add three visualizations with auto-switching"
+echo "✅ Added three awesome visualizations with auto-switching!"
 echo "📅 Commit date: $NEW_DATE"
-echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the updated footer"
+echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the new visualizations"

@@ -200,13 +200,34 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .viz-header h3 {
   font-family: 'Orbitron', sans-serif;
   font-size: 1.3rem;
   color: var(--primary);
+}
+
+.viz-mode {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 243, 255, 0.1);
+}
+
+.mode-label {
+  font-weight: 600;
+  margin-right: 0.5rem;
+  color: var(--primary);
+}
+
+#currentVisualization {
+  color: var(--accent);
+  font-weight: 500;
 }
 
 .status-indicator {
