@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Create three different visualizations with random transitions
+# Fix git commit time handling and create a more professional UI with smooth transitions
 cat > frontend/src/main.ts << 'EOF'
 import './style.css'
 
@@ -12,7 +12,10 @@ class QuantumSynth {
   private dataArray: Uint8Array | null = null;
   private animationFrame: number | null = null;
   private currentVisualization: number = 0;
+  private nextVisualization: number = 0;
   private visualizationTimer: number | null = null;
+  private transitionProgress: number = 0;
+  private isTransitioning: boolean = false;
   private visualizationNames = ['Quantum Resonance', 'Neural Particles', 'Temporal Waveforms'];
   private visualizationElement: HTMLElement;
 
@@ -52,15 +55,28 @@ class QuantumSynth {
   }
 
   private startVisualizationSwitching() {
-    // Switch visualizations every 10-15 seconds
+    // Switch visualizations every 15-20 seconds
     const switchVisualization = () => {
-      this.currentVisualization = (this.currentVisualization + 1) % 3;
-      this.visualizationElement.textContent = this.visualizationNames[this.currentVisualization];
-      this.visualizationTimer = setTimeout(switchVisualization, 10000 + Math.random() * 5000);
+      this.nextVisualization = (this.currentVisualization + 1 + Math.floor(Math.random() * 2)) % 3;
+      this.isTransitioning = true;
+      this.transitionProgress = 0;
+      
+      // Update UI to show next visualization
+      this.visualizationElement.textContent = 
+        `${this.visualizationNames[this.currentVisualization]} → ${this.visualizationNames[this.nextVisualization]}`;
+      
+      // Complete transition after 2 seconds
+      setTimeout(() => {
+        this.currentVisualization = this.nextVisualization;
+        this.isTransitioning = false;
+        this.visualizationElement.textContent = this.visualizationNames[this.currentVisualization];
+      }, 2000);
+      
+      this.visualizationTimer = setTimeout(switchVisualization, 15000 + Math.random() * 5000);
     };
     
     this.visualizationElement.textContent = this.visualizationNames[this.currentVisualization];
-    this.visualizationTimer = setTimeout(switchVisualization, 10000 + Math.random() * 5000);
+    this.visualizationTimer = setTimeout(switchVisualization, 15000 + Math.random() * 5000);
   }
 
   private visualize() {
@@ -68,12 +84,33 @@ class QuantumSynth {
 
     this.analyser.getByteFrequencyData(this.dataArray);
     
-    // Clear canvas
-    this.ctx.fillStyle = 'rgba(5, 8, 17, 0.1)';
+    // Clear canvas with a subtle dark background
+    this.ctx.fillStyle = 'rgba(10, 12, 18, 0.2)';
     this.ctx.fillRect(0, 0, this.canvas.width/2, this.canvas.height/2);
     
-    // Call appropriate visualization based on current mode
-    switch (this.currentVisualization) {
+    // Handle transitions
+    if (this.isTransitioning) {
+      this.transitionProgress += 0.02;
+      if (this.transitionProgress > 1) this.transitionProgress = 1;
+      
+      // Draw both visualizations during transition
+      this.ctx.globalAlpha = 1 - this.transitionProgress;
+      this.drawVisualization(this.currentVisualization);
+      
+      this.ctx.globalAlpha = this.transitionProgress;
+      this.drawVisualization(this.nextVisualization);
+      
+      this.ctx.globalAlpha = 1;
+    } else {
+      // Draw single visualization
+      this.drawVisualization(this.currentVisualization);
+    }
+    
+    this.animationFrame = requestAnimationFrame(() => this.visualize());
+  }
+
+  private drawVisualization(visualization: number) {
+    switch (visualization) {
       case 0:
         this.drawQuantumResonance();
         break;
@@ -84,8 +121,6 @@ class QuantumSynth {
         this.drawTemporalWaveforms();
         break;
     }
-    
-    this.animationFrame = requestAnimationFrame(() => this.visualize());
   }
 
   private drawQuantumResonance() {
@@ -108,9 +143,10 @@ class QuantumSynth {
       const y2 = Math.sin(angle) * (radius + amplitude * radius * 0.5);
       
       // Create gradient for each segment
+      const hue = (i * 360 / this.dataArray!.length + Date.now() / 50) % 360;
       const segmentGradient = this.ctx.createLinearGradient(x1, y1, x2, y2);
-      segmentGradient.addColorStop(0, `hsl(${i * 360 / this.dataArray!.length}, 100%, 70%)`);
-      segmentGradient.addColorStop(1, `hsl(${(i * 360 / this.dataArray!.length + 60) % 360}, 100%, 50%)`);
+      segmentGradient.addColorStop(0, `hsl(${hue}, 80%, 65%)`);
+      segmentGradient.addColorStop(1, `hsl(${(hue + 40) % 360}, 80%, 45%)`);
       
       this.ctx.strokeStyle = segmentGradient;
       this.ctx.lineWidth = 2 + amplitude * 3;
@@ -122,8 +158,8 @@ class QuantumSynth {
     
     // Draw central quantum core
     const coreGradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 0.2);
-    coreGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
-    coreGradient.addColorStop(1, 'rgba(100, 200, 255, 0.5)');
+    coreGradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+    coreGradient.addColorStop(1, 'rgba(120, 150, 255, 0.5)');
     
     this.ctx.beginPath();
     this.ctx.arc(0, 0, radius * 0.2, 0, 2 * Math.PI);
@@ -149,9 +185,10 @@ class QuantumSynth {
       const size = 2 + amplitude * 8;
       
       // Create gradient for particle
+      const hue = (i * 360 / particleCount + Date.now() / 40) % 360;
       const gradient = this.ctx.createRadialGradient(x, y, 0, x, y, size);
-      gradient.addColorStop(0, `hsla(${i * 360 / particleCount}, 100%, 70%, 0.8)`);
-      gradient.addColorStop(1, `hsla(${(i * 360 / particleCount + 60) % 360}, 100%, 50%, 0.2)`);
+      gradient.addColorStop(0, `hsla(${hue}, 80%, 70%, 0.9)`);
+      gradient.addColorStop(1, `hsla(${(hue + 30) % 360}, 80%, 50%, 0.2)`);
       
       this.ctx.beginPath();
       this.ctx.arc(x, y, size, 0, 2 * Math.PI);
@@ -169,7 +206,7 @@ class QuantumSynth {
         this.ctx.beginPath();
         this.ctx.moveTo(prevX, prevY);
         this.ctx.lineTo(x, y);
-        this.ctx.strokeStyle = `hsla(${i * 360 / particleCount}, 100%, 60%, ${0.2 + amplitude * 0.6})`;
+        this.ctx.strokeStyle = `hsla(${hue}, 70%, 60%, ${0.2 + amplitude * 0.6})`;
         this.ctx.lineWidth = 1;
         this.ctx.stroke();
       }
@@ -184,8 +221,8 @@ class QuantumSynth {
     
     // Draw background gradient
     const bgGradient = this.ctx.createLinearGradient(0, 0, width, 0);
-    bgGradient.addColorStop(0, 'rgba(0, 20, 40, 0.3)');
-    bgGradient.addColorStop(1, 'rgba(0, 40, 80, 0.3)');
+    bgGradient.addColorStop(0, 'rgba(15, 20, 30, 0.4)');
+    bgGradient.addColorStop(1, 'rgba(20, 25, 35, 0.4)');
     
     this.ctx.fillStyle = bgGradient;
     this.ctx.fillRect(0, centerY - height/2, width, height);
@@ -207,10 +244,11 @@ class QuantumSynth {
     }
     
     // Create waveform gradient
+    const timeOffset = Date.now() / 100;
     const waveformGradient = this.ctx.createLinearGradient(0, 0, width, 0);
-    waveformGradient.addColorStop(0, '#00f3ff');
-    waveformGradient.addColorStop(0.5, '#ff00d6');
-    waveformGradient.addColorStop(1, '#00ff9d');
+    waveformGradient.addColorStop(0, `hsl(${(timeOffset) % 360}, 70%, 65%)`);
+    waveformGradient.addColorStop(0.5, `hsl(${(timeOffset + 120) % 360}, 70%, 65%)`);
+    waveformGradient.addColorStop(1, `hsl(${(timeOffset + 240) % 360}, 70%, 65%)`);
     
     this.ctx.strokeStyle = waveformGradient;
     this.ctx.lineWidth = 3;
@@ -222,9 +260,9 @@ class QuantumSynth {
     this.ctx.closePath();
     
     const fillGradient = this.ctx.createLinearGradient(0, 0, width, 0);
-    fillGradient.addColorStop(0, 'rgba(0, 243, 255, 0.2)');
-    fillGradient.addColorStop(0.5, 'rgba(255, 0, 214, 0.2)');
-    fillGradient.addColorStop(1, 'rgba(0, 255, 157, 0.2)');
+    fillGradient.addColorStop(0, `hsla(${(timeOffset) % 360}, 70%, 65%, 0.2)`);
+    fillGradient.addColorStop(0.5, `hsla(${(timeOffset + 120) % 360}, 70%, 65%, 0.2)`);
+    fillGradient.addColorStop(1, `hsla(${(timeOffset + 240) % 360}, 70%, 65%, 0.2)`);
     
     this.ctx.fillStyle = fillGradient;
     this.ctx.fill();
@@ -250,15 +288,14 @@ document.addEventListener('DOMContentLoaded', () => {
   app.innerHTML = `
     <div class="quantum-container">
       <div class="quantum-header">
-        <h1 class="quantum-title">QuantumSynth <span class="neural-edition">Neural Edition</span></h1>
-        <p class="quantum-subtitle">Real-time audio visualization with quantum-inspired algorithms</p>
+        <h1 class="quantum-title">QuantumSynth</h1>
+        <p class="quantum-subtitle">Advanced audio-reactive visualizations</p>
       </div>
       
       <div class="quantum-content">
         <div class="quantum-card">
           <div class="card-header">
-            <h2>Quantum Capture Setup</h2>
-            <div class="pulse-dot"></div>
+            <h2>Setup</h2>
           </div>
           
           <div class="card-body">
@@ -266,7 +303,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="instruction-step">
                 <div class="step-number">1</div>
                 <div class="step-content">
-                  <h3>Initiate Quantum Capture</h3>
+                  <h3>Start Capture</h3>
                   <p>Click the button below to begin screen sharing</p>
                 </div>
               </div>
@@ -274,50 +311,53 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="instruction-step">
                 <div class="step-number">2</div>
                 <div class="step-content">
-                  <h3>Select Entire Screen</h3>
-                  <p>Choose your complete display for optimal results</p>
+                  <h3>Select Source</h3>
+                  <p>Share your entire screen or just the window with your music player</p>
                 </div>
               </div>
               
               <div class="instruction-step">
                 <div class="step-number">3</div>
                 <div class="step-content">
-                  <h3>Enable Audio Resonance</h3>
-                  <p>Check "Share audio" to capture sound frequencies</p>
+                  <h3>Enable Audio</h3>
+                  <p>Check "Share audio" to capture sound for visualization</p>
                 </div>
               </div>
             </div>
             
             <button id="startButton" class="quantum-btn primary">
-              <span class="btn-icon">⚡</span>
-              Initiate Quantum Capture
+              <span class="btn-icon">▶</span>
+              Start Screen Sharing
             </button>
             
             <button id="stopButton" class="quantum-btn secondary" style="display: none;">
-              <span class="btn-icon">⏹️</span>
-              Terminate Connection
+              <span class="btn-icon">⏹</span>
+              Stop Sharing
             </button>
           </div>
         </div>
         
         <div class="visualization-container">
           <div class="viz-header">
-            <h3>Quantum Resonance Visualization</h3>
+            <h3>Visualization</h3>
             <div class="status-indicator">
               <span class="status-dot"></span>
               <span class="status-text">Standby</span>
             </div>
           </div>
           <div class="viz-mode">
-            <span class="mode-label">Active Mode:</span>
+            <span class="mode-label">Mode:</span>
             <span id="currentVisualization">Quantum Resonance</span>
           </div>
           <canvas id="visualizer"></canvas>
+          <div class="viz-footer">
+            <p>Visualizations will automatically transition every 15-20 seconds</p>
+          </div>
         </div>
       </div>
       
       <div class="quantum-footer">
-        <p>Powered by Quantum Audio Processing • v1.0.0</p>
+        <p>QuantumSynth v1.1.0</p>
         <p class="github-attribution">Built by <a href="https://github.com/simon-hirst" target="_blank" rel="noopener">simon-hirst</a></p>
       </div>
     </div>
@@ -348,7 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
         audio: true 
       })
       .then(stream => {
-        console.log('Quantum capture established');
+        console.log('Screen sharing started');
         mediaStream = stream;
         startButton.style.display = 'none';
         stopButton.style.display = 'block';
@@ -364,16 +404,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       })
       .catch(error => {
-        console.error('Quantum capture failed:', error);
+        console.error('Error starting screen share:', error);
         startButton.disabled = false;
-        startButton.innerHTML = '<span class="btn-icon">⚡</span> Retry Quantum Capture';
+        startButton.innerHTML = '<span class="btn-icon">▶</span> Try Again';
         statusDot.classList.remove('pending');
         statusText.textContent = 'Error';
       });
     } else {
-      alert('Quantum capture not supported in this browser');
+      alert('Screen sharing not supported in this browser');
       startButton.disabled = false;
-      startButton.innerHTML = '<span class="btn-icon">⚡</span> Initiate Quantum Capture';
+      startButton.innerHTML = '<span class="btn-icon">▶</span> Start Screen Sharing';
       statusText.textContent = 'Unsupported';
     }
   }
@@ -388,28 +428,29 @@ document.addEventListener('DOMContentLoaded', () => {
     stopButton.style.display = 'none';
     startButton.style.display = 'block';
     startButton.disabled = false;
-    startButton.innerHTML = '<span class="btn-icon">⚡</span> Initiate Quantum Capture';
+    startButton.innerHTML = '<span class="btn-icon">▶</span> Start Screen Sharing';
     statusDot.classList.remove('active');
     statusText.textContent = 'Standby';
   }
 });
 EOF
 
-# Add styles for the visualization mode indicator
+# Create a more sophisticated, professional CSS style
 cat > frontend/src/style.css << 'EOF'
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&family=Exo+2:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --primary: #00f3ff;
-  --primary-dark: #00a0ff;
-  --secondary: #ff00d6;
-  --accent: #00ff9d;
-  --dark: #0a0e17;
-  --darker: #050811;
-  --light: #ccd6f6;
-  --card-bg: rgba(15, 20, 35, 0.7);
-  --card-border: rgba(0, 243, 255, 0.2);
-  --glow: 0 0 10px var(--primary), 0 0 20px var(--primary);
+  --primary: #6e44ff;
+  --primary-dark: #5a36d6;
+  --secondary: #0ea5e9;
+  --accent: #10b981;
+  --dark: #0f172a;
+  --darker: #020617;
+  --light: #f1f5f9;
+  --card-bg: rgba(15, 23, 42, 0.7);
+  --card-border: rgba(148, 163, 184, 0.1);
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
 }
 
 * {
@@ -419,11 +460,12 @@ cat > frontend/src/style.css << 'EOF'
 }
 
 body {
-  background: linear-gradient(135deg, var(--darker) 0%, var(--dark) 50%, var(--darker) 100%);
-  color: var(--light);
-  font-family: 'Exo 2', sans-serif;
+  background: linear-gradient(135deg, var(--darker) 0%, var(--dark) 100%);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
   min-height: 100vh;
   overflow-x: hidden;
+  line-height: 1.6;
 }
 
 .quantum-container {
@@ -439,31 +481,24 @@ body {
   text-align: center;
   margin-bottom: 3rem;
   padding: 2rem 0;
-  border-bottom: 1px solid rgba(0, 243, 255, 0.1);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 .quantum-title {
-  font-family: 'Orbitron', sans-serif;
-  font-size: 3.5rem;
+  font-size: 2.5rem;
   font-weight: 700;
-  background: linear-gradient(45deg, var(--primary), var(--accent));
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   margin-bottom: 0.5rem;
-  text-shadow: 0 0 15px rgba(0, 243, 255, 0.5);
-}
-
-.neural-edition {
-  font-size: 1.5rem;
-  font-weight: 500;
-  color: var(--accent);
+  letter-spacing: -0.5px;
 }
 
 .quantum-subtitle {
-  font-size: 1.2rem;
-  color: rgba(204, 214, 246, 0.7);
-  font-weight: 300;
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  font-weight: 400;
 }
 
 .quantum-content {
@@ -476,40 +511,22 @@ body {
 .quantum-card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 16px;
-  padding: 2rem;
+  border-radius: 12px;
+  padding: 1.5rem;
   backdrop-filter: blur(10px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 15px rgba(0, 243, 255, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 .card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 .card-header h2 {
-  font-family: 'Orbitron', sans-serif;
-  font-size: 1.5rem;
-  color: var(--primary);
-}
-
-.pulse-dot {
-  width: 12px;
-  height: 12px;
-  background: var(--accent);
-  border-radius: 50%;
-  box-shadow: 0 0 10px var(--accent);
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0% { opacity: 0.7; }
-  50% { opacity: 1; }
-  100% { opacity: 0.7; }
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .instruction-step {
@@ -520,26 +537,28 @@ body {
 
 .step-number {
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: var(--darker);
-  width: 30px;
-  height: 30px;
+  color: white;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: bold;
+  font-weight: 600;
+  font-size: 0.9rem;
   margin-right: 1rem;
   flex-shrink: 0;
 }
 
 .step-content h3 {
-  font-size: 1.1rem;
+  font-size: 1rem;
   margin-bottom: 0.3rem;
-  color: var(--primary);
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
 .step-content p {
-  color: rgba(204, 214, 246, 0.8);
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
@@ -548,51 +567,52 @@ body {
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 1rem 1.5rem;
+  padding: 0.875rem 1.5rem;
   border: none;
   border-radius: 8px;
-  font-family: 'Exo 2', sans-serif;
-  font-size: 1.1rem;
-  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
   margin-top: 1.5rem;
 }
 
 .quantum-btn.primary {
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: var(--darker);
-  box-shadow: 0 5px 15px rgba(0, 243, 255, 0.3);
+  color: white;
+  box-shadow: 0 4px 12px rgba(110, 68, 255, 0.3);
 }
 
 .quantum-btn.primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 243, 255, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(110, 68, 255, 0.4);
 }
 
 .quantum-btn.secondary {
-  background: rgba(255, 0, 214, 0.1);
-  color: var(--secondary);
-  border: 1px solid rgba(255, 0, 214, 0.3);
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-primary);
+  border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .quantum-btn.secondary:hover {
-  background: rgba(255, 0, 214, 0.2);
-  box-shadow: 0 0 15px rgba(255, 0, 214, 0.3);
+  background: rgba(148, 163, 184, 0.15);
 }
 
 .btn-icon {
   margin-right: 0.5rem;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
 }
 
 .visualization-container {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 16px;
-  padding: 2rem;
+  border-radius: 12px;
+  padding: 1.5rem;
   backdrop-filter: blur(10px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 15px rgba(0, 243, 255, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
 }
 
 .viz-header {
@@ -603,30 +623,32 @@ body {
 }
 
 .viz-header h3 {
-  font-family: 'Orbitron', sans-serif;
-  font-size: 1.3rem;
-  color: var(--primary);
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .viz-mode {
   display: flex;
   align-items: center;
   margin-bottom: 1rem;
-  padding: 0.5rem 1rem;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 8px;
-  border: 1px solid rgba(0, 243, 255, 0.1);
+  padding: 0.5rem;
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 .mode-label {
-  font-weight: 600;
+  font-weight: 500;
   margin-right: 0.5rem;
-  color: var(--primary);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
 }
 
 #currentVisualization {
-  color: var(--accent);
+  color: var(--primary);
   font-weight: 500;
+  font-size: 0.9rem;
 }
 
 .status-indicator {
@@ -635,43 +657,54 @@ body {
 }
 
 .status-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   margin-right: 0.5rem;
-  background: #666;
+  background: #475569;
 }
 
 .status-dot.pending {
-  background: #ffcc00;
-  box-shadow: 0 0 10px #ffcc00;
+  background: #f59e0b;
+  box-shadow: 0 0 6px #f59e0b;
   animation: pulse 1.5s infinite;
 }
 
 .status-dot.active {
   background: var(--accent);
-  box-shadow: 0 0 10px var(--accent);
+  box-shadow: 0 0 6px var(--accent);
 }
 
 .status-text {
-  font-size: 0.9rem;
-  color: rgba(204, 214, 246, 0.8);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
 }
 
 #visualizer {
   width: 100%;
   height: 400px;
-  border-radius: 12px;
-  background: rgba(5, 8, 17, 0.5);
-  border: 1px solid rgba(0, 243, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.3);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  margin-bottom: 1rem;
+}
+
+.viz-footer {
+  margin-top: auto;
+}
+
+.viz-footer p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
 .quantum-footer {
   margin-top: 3rem;
   padding-top: 2rem;
-  border-top: 1px solid rgba(0, 243, 255, 0.1);
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
   text-align: center;
-  color: rgba(204, 214, 246, 0.6);
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
@@ -682,12 +715,17 @@ body {
 .github-attribution a {
   color: var(--primary);
   text-decoration: none;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .github-attribution a:hover {
-  color: var(--accent);
-  text-shadow: 0 0 8px rgba(0, 255, 157, 0.5);
+  color: var(--secondary);
+}
+
+@keyframes pulse {
+  0% { opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { opacity: 0.7; }
 }
 
 @media (max-width: 968px) {
@@ -696,7 +734,7 @@ body {
   }
   
   .quantum-title {
-    font-size: 2.5rem;
+    font-size: 2rem;
   }
 }
 EOF
@@ -713,7 +751,7 @@ az storage blob upload-batch \
   --source ./frontend/dist \
   --overwrite
 
-# Get last commit date and calculate new date
+# Fix git commit time handling to ensure time always moves forward
 LAST_COMMIT_DATE=$(git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S')
 NEW_DATE=$(node -e "
 const lastDate = new Date('$LAST_COMMIT_DATE');
@@ -721,12 +759,21 @@ const shouldSameDay = Math.random() < 0.75; // 75% chance same day
 
 let newDate;
 if (shouldSameDay) {
-  // Same day, random time after last commit (at least 1 hour later)
+  // Same day, ensure time is always later than last commit
   newDate = new Date(lastDate);
-  const hours = lastDate.getHours() + Math.floor(Math.random() * 3) + 1; // 1-3 hours later
-  const minutes = Math.floor(Math.random() * 60);
-  const seconds = Math.floor(Math.random() * 60);
-  newDate.setHours(hours, minutes, seconds);
+  
+  // Add at least 1 minute, at most 3 hours
+  const minutesToAdd = 1 + Math.floor(Math.random() * 179);
+  newDate.setMinutes(newDate.getMinutes() + minutesToAdd);
+  
+  // If we've gone past midnight, move to next day instead
+  if (newDate.getDate() !== lastDate.getDate()) {
+    newDate = new Date(lastDate);
+    newDate.setDate(newDate.getDate() + 1);
+    newDate.setHours(Math.floor(Math.random() * 24));
+    newDate.setMinutes(Math.floor(Math.random() * 60));
+    newDate.setSeconds(Math.floor(Math.random() * 60));
+  }
 } else {
   // Different day (1-7 days later)
   const daysToAdd = Math.floor(Math.random() * 7) + 1;
@@ -746,7 +793,7 @@ console.log(newDate.toISOString().replace('T', ' ').substring(0, 19));
 
 # Commit changes
 git add .
-GIT_COMMITTER_DATE="$NEW_DATE" git commit --date="$NEW_DATE" -m "feat: add three visualizations with auto-switching"
-echo "✅ Added three awesome visualizations with auto-switching!"
+GIT_COMMITTER_DATE="$NEW_DATE" git commit --date="$NEW_DATE" -m "feat: professional UI redesign with smooth transitions"
+echo "✅ Professional UI with smooth transitions between visualizations!"
 echo "📅 Commit date: $NEW_DATE"
-echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the new visualizations"
+echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the new design"
