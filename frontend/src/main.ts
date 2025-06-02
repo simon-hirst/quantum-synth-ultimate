@@ -7,22 +7,24 @@ class QuantumSynth {
   private analyser: AnalyserNode | null = null;
   private dataArray: Uint8Array | null = null;
   private animationFrame: number | null = null;
-  private currentVisualization: number = 0;
-  private nextVisualization: number = 0;
+  private currentVizType: string = 'quantum';
+  private nextVizType: string = 'quantum';
   private visualizationTimer: number | null = null;
   private transitionProgress: number = 0;
   private isTransitioning: boolean = false;
-  private visualizationNames = ['Quantum Resonance', 'Neural Particles', 'Temporal Waveforms'];
   private visualizationElement: HTMLElement;
-  private visualizationParams: any = {};
+  private vizParams: any = {};
   private lastUpdate: number = 0;
+  private ws: WebSocket | null = null;
+  private vizQueue: any[] = [];
+  private currentViz: any = null;
 
   constructor(canvas: HTMLCanvasElement, visualizationElement: HTMLElement) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.visualizationElement = visualizationElement;
     this.setupCanvas();
-    this.initializeVisualizationParams();
+    this.connectToBackend();
   }
 
   private setupCanvas() {
@@ -31,25 +33,115 @@ class QuantumSynth {
     this.ctx.scale(2, 2);
   }
 
-  private initializeVisualizationParams() {
-    // Initialize parameters for each visualization type
-    this.visualizationParams = {
-      quantum: {
-        rotation: 0,
-        particleSize: 2,
-        waveHeight: 150
-      },
-      neural: {
-        particleCount: 100,
-        connectionThreshold: 0.3,
-        maxDistance: 150
-      },
-      temporal: {
-        waveWidth: 1,
-        waveHeight: 200,
-        fillOpacity: 0.2
-      }
+  private connectToBackend() {
+    try {
+      this.ws = new WebSocket('wss://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/ws');
+      
+      this.ws.onopen = () => {
+        console.log('Connected to visualization server');
+        this.requestNewVisualization();
+      };
+      
+      this.ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'visualization') {
+            this.vizQueue.push(data);
+            if (!this.currentViz) {
+              this.startNextVisualization();
+            }
+          }
+        } catch (error) {
+          console.error('Error parsing visualization data:', error);
+        }
+      };
+      
+      this.ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        // Fallback to local generation if WebSocket fails
+        this.generateLocalVisualization();
+      };
+      
+      this.ws.onclose = () => {
+        console.log('Disconnected from visualization server');
+        // Fallback to local generation
+        this.generateLocalVisualization();
+      };
+    } catch (error) {
+      console.error('Failed to connect to backend, using local generation:', error);
+      this.generateLocalVisualization();
+    }
+  }
+
+  private requestNewVisualization() {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'request_viz' }));
+    }
+  }
+
+  private generateLocalVisualization() {
+    // Fallback local visualization generator
+    const types = ['quantum', 'neural', 'temporal'];
+    const localViz = {
+      type: types[Math.floor(Math.random() * types.length)],
+      parameters: this.generateRandomParameters(),
+      duration: 15 + Math.random() * 15
     };
+    
+    this.vizQueue.push(localViz);
+    if (!this.currentViz) {
+      this.startNextVisualization();
+    }
+    
+    // Schedule next local visualization
+    setTimeout(() => this.generateLocalVisualization(), 5000 + Math.random() * 10000);
+  }
+
+  private generateRandomParameters() {
+    return {
+      rotation: Math.random() * 2,
+      particleSize: 2 + Math.random() * 4,
+      waveHeight: 150 + Math.random() * 150,
+      particleCount: 80 + Math.random() * 80,
+      connectionThreshold: 0.2 + Math.random() * 0.4,
+      maxDistance: 120 + Math.random() * 100,
+      waveWidth: 0.5 + Math.random() * 2,
+      fillOpacity: 0.1 + Math.random() * 0.3,
+      colorPalette: Math.floor(Math.random() * 5),
+      symmetry: Math.floor(Math.random() * 3),
+      complexity: 0.5 + Math.random() * 0.5
+    };
+  }
+
+  private startNextVisualization() {
+    if (this.vizQueue.length === 0) return;
+    
+    this.currentViz = this.vizQueue.shift();
+    this.nextVizType = this.currentViz.type;
+    this.vizParams = this.currentViz.parameters;
+    
+    // Start transition
+    this.isTransitioning = true;
+    this.transitionProgress = 0;
+    
+    this.visualizationElement.textContent = 
+      `Generating: ${this.nextVizType} #${Math.floor(Math.random() * 1000)}`;
+    
+    // Complete transition after 2 seconds
+    setTimeout(() => {
+      this.currentVizType = this.nextVizType;
+      this.isTransitioning = false;
+      this.visualizationElement.textContent = `${this.nextVizType} #${Math.floor(Math.random() * 1000)}`;
+      
+      // Schedule next visualization
+      this.visualizationTimer = setTimeout(() => {
+        this.startNextVisualization();
+      }, this.currentViz.duration * 1000);
+      
+      // Request next visualization from server
+      this.requestNewVisualization();
+    }, 2000);
   }
 
   initialize(stream: MediaStream) {
@@ -67,37 +159,11 @@ class QuantumSynth {
       this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
       this.lastUpdate = Date.now();
       
-      // Start visualization and switching
-      this.startVisualizationSwitching();
+      // Start visualization
       this.visualize();
     } catch (error) {
       console.error('Quantum audio initialization failed:', error);
     }
-  }
-
-  private startVisualizationSwitching() {
-    // Switch visualizations every 20-30 seconds
-    const switchVisualization = () => {
-      this.nextVisualization = Math.floor(Math.random() * 3);
-      this.isTransitioning = true;
-      this.transitionProgress = 0;
-      
-      // Update UI to show transition
-      this.visualizationElement.textContent = 
-        `${this.visualizationNames[this.currentVisualization]} → ${this.visualizationNames[this.nextVisualization]}`;
-      
-      // Complete transition after 3 seconds
-      setTimeout(() => {
-        this.currentVisualization = this.nextVisualization;
-        this.isTransitioning = false;
-        this.visualizationElement.textContent = this.visualizationNames[this.currentVisualization];
-      }, 3000);
-      
-      this.visualizationTimer = setTimeout(switchVisualization, 20000 + Math.random() * 10000);
-    };
-    
-    this.visualizationElement.textContent = this.visualizationNames[this.currentVisualization];
-    this.visualizationTimer = setTimeout(switchVisualization, 20000 + Math.random() * 10000);
   }
 
   private visualize() {
@@ -108,76 +174,48 @@ class QuantumSynth {
     const deltaTime = (now - this.lastUpdate) / 1000;
     this.lastUpdate = now;
     
-    // Update visualization parameters
-    this.updateVisualizationParams(deltaTime);
-    
     // Clear canvas with a subtle dark background
     this.ctx.fillStyle = 'rgba(10, 12, 18, 0.2)';
     this.ctx.fillRect(0, 0, this.canvas.width/2, this.canvas.height/2);
     
     // Handle transitions with morphing effect
     if (this.isTransitioning) {
-      this.transitionProgress += deltaTime / 3; // 3 second transition
+      this.transitionProgress += deltaTime / 2; // 2 second transition
       if (this.transitionProgress > 1) this.transitionProgress = 1;
       
       // Draw morphing between visualizations
       this.drawMorphingVisualization(this.transitionProgress);
     } else {
-      // Draw single visualization
-      this.drawVisualization(this.currentVisualization);
+      // Draw current visualization
+      this.drawVisualization(this.currentVizType);
     }
     
     this.animationFrame = requestAnimationFrame(() => this.visualize());
   }
 
-  private updateVisualizationParams(deltaTime: number) {
-    // Update parameters for dynamic visualizations
-    this.visualizationParams.quantum.rotation += deltaTime * 0.5;
-    this.visualizationParams.quantum.particleSize = 2 + (this.getAverageAmplitude() * 6);
-    this.visualizationParams.quantum.waveHeight = 150 + (this.getAverageAmplitude() * 100);
-    
-    this.visualizationParams.neural.particleCount = 80 + Math.floor(this.getAverageAmplitude() * 40);
-    this.visualizationParams.neural.connectionThreshold = 0.2 + (this.getAverageAmplitude() * 0.3);
-    
-    this.visualizationParams.temporal.waveHeight = 200 + (this.getAverageAmplitude() * 150);
-    this.visualizationParams.temporal.fillOpacity = 0.1 + (this.getAverageAmplitude() * 0.3);
-  }
-
-  private getAverageAmplitude(): number {
-    if (!this.dataArray) return 0;
-    let sum = 0;
-    for (let i = 0; i < this.dataArray.length; i++) {
-      sum += this.dataArray[i];
-    }
-    return sum / (this.dataArray.length * 255);
-  }
-
   private drawMorphingVisualization(progress: number) {
-    // Draw a morphing effect between current and next visualization
+    // Create a hybrid visualization that morphs between the two
     const centerX = this.canvas.width / 4;
     const centerY = this.canvas.height / 4;
-    
-    // Save context
-    this.ctx.save();
     
     // Apply morphing transformation
     const scale = 0.9 + 0.2 * Math.sin(progress * Math.PI);
     const rotation = progress * Math.PI;
     
+    this.ctx.save();
     this.ctx.translate(centerX, centerY);
     this.ctx.scale(scale, scale);
     this.ctx.rotate(rotation);
     this.ctx.translate(-centerX, -centerY);
     
-    // Draw a hybrid visualization during transition
+    // Draw a hybrid visualization
     this.drawHybridVisualization(progress);
     
-    // Restore context
     this.ctx.restore();
   }
 
   private drawHybridVisualization(progress: number) {
-    // Create a hybrid visualization that morphs between the two
+    // Create a hybrid visualization that combines elements from both visualizations
     const centerX = this.canvas.width / 4;
     const centerY = this.canvas.height / 4;
     const radius = Math.min(centerX, centerY) * 0.8;
@@ -190,27 +228,13 @@ class QuantumSynth {
       const angle = (i * 2 * Math.PI) / particleCount;
       
       // Calculate position based on progress
-      let x, y;
+      const circleX = centerX + Math.cos(angle) * radius;
+      const circleY = centerY + Math.sin(angle) * radius;
+      const particleX = centerX + Math.cos(angle) * (amplitude * radius * 0.7);
+      const particleY = centerY + Math.sin(angle) * (amplitude * radius * 0.7);
       
-      if (progress < 0.5) {
-        // First half of transition - from circular to particle
-        const circleX = centerX + Math.cos(angle) * radius;
-        const circleY = centerY + Math.sin(angle) * radius;
-        const particleX = centerX + Math.cos(angle) * (amplitude * radius * 0.7);
-        const particleY = centerY + Math.sin(angle) * (amplitude * radius * 0.7);
-        
-        x = circleX + (particleX - circleX) * (progress * 2);
-        y = circleY + (particleY - circleY) * (progress * 2);
-      } else {
-        // Second half of transition - from particle to waveform
-        const particleX = centerX + Math.cos(angle) * (amplitude * radius * 0.7);
-        const particleY = centerY + Math.sin(angle) * (amplitude * radius * 0.7);
-        const waveX = (i / particleCount) * (this.canvas.width / 2);
-        const waveY = centerY - (amplitude - 0.5) * this.visualizationParams.temporal.waveHeight;
-        
-        x = particleX + (waveX - particleX) * ((progress - 0.5) * 2);
-        y = particleY + (waveY - particleY) * ((progress - 0.5) * 2);
-      }
+      const x = circleX + (particleX - circleX) * progress;
+      const y = circleY + (particleY - circleY) * progress;
       
       const size = 2 + amplitude * 8;
       const hue = (i * 360 / particleCount + Date.now() / 40) % 360;
@@ -222,17 +246,19 @@ class QuantumSynth {
     }
   }
 
-  private drawVisualization(visualization: number) {
-    switch (visualization) {
-      case 0:
+  private drawVisualization(vizType: string) {
+    switch (vizType) {
+      case 'quantum':
         this.drawQuantumResonance();
         break;
-      case 1:
+      case 'neural':
         this.drawNeuralParticles();
         break;
-      case 2:
+      case 'temporal':
         this.drawTemporalWaveforms();
         break;
+      default:
+        this.drawQuantumResonance();
     }
   }
 
@@ -243,7 +269,7 @@ class QuantumSynth {
     
     this.ctx.save();
     this.ctx.translate(centerX, centerY);
-    this.ctx.rotate(this.visualizationParams.quantum.rotation);
+    this.ctx.rotate(this.vizParams.rotation || 0);
     
     for (let i = 0; i < this.dataArray!.length; i++) {
       const amplitude = this.dataArray![i] / 255;
@@ -251,12 +277,12 @@ class QuantumSynth {
       
       const x1 = Math.cos(angle) * radius;
       const y1 = Math.sin(angle) * radius;
-      const x2 = Math.cos(angle) * (radius + amplitude * this.visualizationParams.quantum.waveHeight * 0.5);
-      const y2 = Math.sin(angle) * (radius + amplitude * this.visualizationParams.quantum.waveHeight * 0.5);
+      const x2 = Math.cos(angle) * (radius + amplitude * (this.vizParams.waveHeight || 150) * 0.5);
+      const y2 = Math.sin(angle) * (radius + amplitude * (this.vizParams.waveHeight || 150) * 0.5);
       
       const hue = (i * 360 / this.dataArray!.length + Date.now() / 50) % 360;
       this.ctx.strokeStyle = `hsl(${hue}, 80%, 65%)`;
-      this.ctx.lineWidth = this.visualizationParams.quantum.particleSize + amplitude * 3;
+      this.ctx.lineWidth = (this.vizParams.particleSize || 2) + amplitude * 3;
       this.ctx.beginPath();
       this.ctx.moveTo(x1, y1);
       this.ctx.lineTo(x2, y2);
@@ -276,7 +302,7 @@ class QuantumSynth {
   }
 
   private drawNeuralParticles() {
-    const particleCount = this.visualizationParams.neural.particleCount;
+    const particleCount = this.vizParams.particleCount || 100;
     const centerX = this.canvas.width / 4;
     const centerY = this.canvas.height / 4;
     
@@ -285,11 +311,11 @@ class QuantumSynth {
     for (let i = 0; i < particleCount; i++) {
       const amplitude = this.dataArray![i % this.dataArray!.length] / 255;
       const angle = (i * 2 * Math.PI) / particleCount;
-      const distance = amplitude * this.visualizationParams.neural.maxDistance;
+      const distance = amplitude * (this.vizParams.maxDistance || 150);
       
       const x = centerX + Math.cos(angle) * distance;
       const y = centerY + Math.sin(angle) * distance;
-      const size = 2 + amplitude * 8;
+      const size = (this.vizParams.particleSize || 2) + amplitude * 8;
       const hue = (i * 360 / particleCount + Date.now() / 40) % 360;
       
       particles.push({x, y, size, hue});
@@ -301,17 +327,18 @@ class QuantumSynth {
     }
     
     // Draw connections
+    const connectionThreshold = this.vizParams.connectionThreshold || 0.3;
     for (let i = 0; i < particles.length; i++) {
       for (let j = i + 1; j < particles.length; j++) {
         const dx = particles[i].x - particles[j].x;
         const dy = particles[i].y - particles[j].y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
-        if (distance < this.visualizationParams.neural.maxDistance * this.visualizationParams.neural.connectionThreshold) {
+        if (distance < (this.vizParams.maxDistance || 150) * connectionThreshold) {
           this.ctx.beginPath();
           this.ctx.moveTo(particles[i].x, particles[i].y);
           this.ctx.lineTo(particles[j].x, particles[j].y);
-          this.ctx.strokeStyle = `hsla(${particles[i].hue}, 70%, 60%, ${0.3 - distance / (this.visualizationParams.neural.maxDistance * 2)})`;
+          this.ctx.strokeStyle = `hsla(${particles[i].hue}, 70%, 60%, ${0.3 - distance / ((this.vizParams.maxDistance || 150) * 2)})`;
           this.ctx.lineWidth = 1;
           this.ctx.stroke();
         }
@@ -322,7 +349,7 @@ class QuantumSynth {
   private drawTemporalWaveforms() {
     const centerY = this.canvas.height / 4;
     const width = this.canvas.width / 2;
-    const height = this.visualizationParams.temporal.waveHeight;
+    const height = this.vizParams.waveHeight || 200;
     
     // Draw background gradient
     const bgGradient = this.ctx.createLinearGradient(0, 0, width, 0);
@@ -354,7 +381,7 @@ class QuantumSynth {
     waveformGradient.addColorStop(1, `hsl(${(timeOffset + 240) % 360}, 70%, 65%)`);
     
     this.ctx.strokeStyle = waveformGradient;
-    this.ctx.lineWidth = 3;
+    this.ctx.lineWidth = this.vizParams.waveWidth || 3;
     this.ctx.stroke();
     
     // Fill waveform
@@ -363,9 +390,9 @@ class QuantumSynth {
     this.ctx.closePath();
     
     const fillGradient = this.ctx.createLinearGradient(0, 0, width, 0);
-    fillGradient.addColorStop(0, `hsla(${(timeOffset) % 360}, 70%, 65%, ${this.visualizationParams.temporal.fillOpacity})`);
-    fillGradient.addColorStop(0.5, `hsla(${(timeOffset + 120) % 360}, 70%, 65%, ${this.visualizationParams.temporal.fillOpacity})`);
-    fillGradient.addColorStop(1, `hsla(${(timeOffset + 240) % 360}, 70%, 65%, ${this.visualizationParams.temporal.fillOpacity})`);
+    fillGradient.addColorStop(0, `hsla(${(timeOffset) % 360}, 70%, 65%, ${this.vizParams.fillOpacity || 0.2})`);
+    fillGradient.addColorStop(0.5, `hsla(${(timeOffset + 120) % 360}, 70%, 65%, ${this.vizParams.fillOpacity || 0.2})`);
+    fillGradient.addColorStop(1, `hsla(${(timeOffset + 240) % 360}, 70%, 65%, ${this.vizParams.fillOpacity || 0.2})`);
     
     this.ctx.fillStyle = fillGradient;
     this.ctx.fill();
@@ -381,18 +408,21 @@ class QuantumSynth {
     if (this.audioContext) {
       this.audioContext.close();
     }
+    if (this.ws) {
+      this.ws.close();
+    }
   }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('Initializing QuantumSynth Neural Edition...');
+  console.log('Initializing QuantumSynth Infinite Edition...');
   
   const app = document.querySelector<HTMLDivElement>('#app')!;
   app.innerHTML = `
     <div class="quantum-container">
       <div class="quantum-header">
-        <h1 class="quantum-title">QuantumSynth</h1>
-        <p class="quantum-subtitle">Infinite audio-reactive visualizations</p>
+        <h1 class="quantum-title">QuantumSynth Infinite</h1>
+        <p class="quantum-subtitle">AI-Generated Infinite Visualizations</p>
       </div>
       
       <div class="quantum-content">
@@ -434,6 +464,14 @@ document.addEventListener('DOMContentLoaded', () => {
                   <p>After sharing, click "Hide" on the share dialog to remove it from your screen</p>
                 </div>
               </div>
+
+              <div class="drm-warning">
+                <div class="warning-icon">⚠️</div>
+                <div class="warning-content">
+                  <h3>DRM Notice</h3>
+                  <p>Some players like Spotify won't work due to DRM protection. You must share your entire screen for these applications.</p>
+                </div>
+              </div>
             </div>
             
             <button id="startButton" class="quantum-btn primary">
@@ -450,25 +488,25 @@ document.addEventListener('DOMContentLoaded', () => {
         
         <div class="visualization-container">
           <div class="viz-header">
-            <h3>Visualization</h3>
+            <h3>Live Generation</h3>
             <div class="status-indicator">
               <span class="status-dot"></span>
               <span class="status-text">Standby</span>
             </div>
           </div>
           <div class="viz-mode">
-            <span class="mode-label">Mode:</span>
-            <span id="currentVisualization">Quantum Resonance</span>
+            <span class="mode-label">Visualization:</span>
+            <span id="currentVisualization">Connecting to AI...</span>
           </div>
           <canvas id="visualizer"></canvas>
           <div class="viz-footer">
-            <p>Visualizations will automatically morph every 20-30 seconds</p>
+            <p>Infinite AI-generated visualizations streaming live</p>
           </div>
         </div>
       </div>
       
       <div class="quantum-footer">
-        <p>QuantumSynth v1.2.0 - Infinite Visualization Engine</p>
+        <p>QuantumSynth Infinite v2.0.0 - Endless AI Generation</p>
         <p class="github-attribution">Built by <a href="https://github.com/simon-hirst" target="_blank" rel="noopener">simon-hirst</a></p>
       </div>
     </div>

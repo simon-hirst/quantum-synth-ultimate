@@ -5,6 +5,8 @@
   --primary-dark: #5a36d6;
   --secondary: #0ea5e9;
   --accent: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
   --dark: #0f172a;
   --darker: #020617;
   --light: #f1f5f9;
@@ -123,6 +125,34 @@ body {
   font-size: 0.9rem;
 }
 
+.drm-warning {
+  display: flex;
+  align-items: flex-start;
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+}
+
+.warning-icon {
+  font-size: 1.5rem;
+  margin-right: 1rem;
+  flex-shrink: 0;
+}
+
+.warning-content h3 {
+  font-size: 1rem;
+  margin-bottom: 0.3rem;
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.warning-content p {
+  color: rgba(245, 158, 11, 0.9);
+  font-size: 0.9rem;
+}
+
 .quantum-btn {
   display: flex;
   align-items: center;
@@ -226,8 +256,8 @@ body {
 }
 
 .status-dot.pending {
-  background: #f59e0b;
-  box-shadow: 0 0 6px #f59e0b;
+  background: var(--warning);
+  box-shadow: 0 0 6px var(--warning);
   animation: pulse 1.5s infinite;
 }
 
