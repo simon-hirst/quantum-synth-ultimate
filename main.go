@@ -8,17 +8,17 @@ import (
 	"net/http"
 	"time"
 	"sync"
+	"strings"
 	
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
 
-type VisualizationParams struct {
-	Type       string             `json:"type"`
-	Parameters map[string]float64 `json:"parameters"`
-	Duration   float64            `json:"duration"`
-	ID         string             `json:"id"`
+type ShaderParams struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 var (
@@ -29,6 +29,81 @@ var (
 			return true
 		},
 	}
+	
+	shaderTemplates = []string{
+		`
+		void main() {
+			vec2 uv = gl_FragCoord.xy / resolution.xy;
+			float time = u_time * 0.5;
+			float intensity = texture2D(audioData, vec2(uv.x, 0.0)).r;
+			
+			vec3 color = vec3(0.0);
+			color.r = sin(uv.x * 10.0 + time) * 0.5 + 0.5;
+			color.g = cos(uv.y * 8.0 + time) * 0.5 + 0.5;
+			color.b = sin((uv.x + uv.y) * 5.0 + time) * 0.5 + 0.5;
+			
+			color *= intensity * 2.0;
+			gl_FragColor = vec4(color, 1.0);
+		}
+		`,
+		`
+		void main() {
+			vec2 uv = gl_FragCoord.xy / resolution.xy;
+			float time = u_time * 0.8;
+			float intensity = texture2D(audioData, vec2(uv.x, 0.0)).r;
+			
+			vec2 center = vec2(0.5);
+			float dist = distance(uv, center);
+			float circle = smoothstep(0.2, 0.19, dist);
+			
+			vec3 color = vec3(0.0);
+			color.r = sin(time + dist * 10.0) * 0.5 + 0.5;
+			color.g = cos(time + dist * 8.0) * 0.5 + 0.5;
+			color.b = sin(time * 0.5 + dist * 12.0) * 0.5 + 0.5;
+			
+			color *= circle * intensity * 3.0;
+			gl_FragColor = vec4(color, 1.0);
+		}
+		`,
+		`
+		void main() {
+			vec2 uv = gl_FragCoord.xy / resolution.xy;
+			float time = u_time * 1.2;
+			float intensity = texture2D(audioData, vec2(uv.x, 0.0)).r;
+			
+			vec3 color = vec3(0.0);
+			for (int i = 0; i < 5; i++) {
+				float fi = float(i);
+				vec2 position = vec2(0.5 + sin(time * 0.5 + fi * 1.2) * 0.3, 
+									 0.5 + cos(time * 0.7 + fi * 1.5) * 0.3);
+				float dist = distance(uv, position);
+				float size = 0.1 + fi * 0.05;
+				float glow = exp(-dist * 20.0 / (size * 10.0));
+				
+				color.r += glow * sin(time + fi * 2.0) * 0.5 + 0.5;
+				color.g += glow * cos(time + fi * 2.5) * 0.5 + 0.5;
+				color.b += glow * sin(time * 1.5 + fi * 3.0) * 0.5 + 0.5;
+			}
+			
+			color = clamp(color, 0.0, 1.0);
+			color *= intensity * 2.0;
+			gl_FragColor = vec4(color, 1.0);
+		}
+		`,
+	}
+	
+	shaderNames = []string{
+		"Quantum Waves",
+		"Resonance Circles",
+		"Neural Particles",
+		"Temporal Fields",
+		"Synth Grid",
+		"Holographic Matrix",
+		"Fractal Dimensions",
+		"Energy Vortex",
+		"Digital Rain",
+		"Cosmic Strings",
+	}
 )
 
 func main() {
@@ -37,9 +112,8 @@ func main() {
 	router := mux.NewRouter()
 	
 	// API endpoints
-	router.HandleFunc("/api/visualization/next", getNextVisualization).Methods("GET")
-	router.HandleFunc("/api/visualization/current", getCurrentVisualization).Methods("GET")
-	router.HandleFunc("/api/visualization/generate", generateVisualization).Methods("POST")
+	router.HandleFunc("/api/shader/next", getNextShader).Methods("GET")
+	router.HandleFunc("/api/shader/current", getCurrentShader).Methods("GET")
 	router.HandleFunc("/api/health", healthCheck).Methods("GET")
 	
 	// WebSocket endpoint for real-time updates
@@ -66,26 +140,32 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	
 	log.Printf("Client connected: %s", conn.RemoteAddr())
 	
-	// Send initial visualization
-	viz := generateRandomVisualization()
-	if err := conn.WriteJSON(viz); err != nil {
+	// Send initial shader
+	shader := generateRandomShader()
+	if err := conn.WriteJSON(shader); err != nil {
 		log.Printf("WebSocket write failed: %v", err)
 		return
 	}
 	
 	for {
-		// Read message from client (just to keep connection alive)
-		_, _, err := conn.ReadMessage()
+		// Read message from client
+		_, message, err := conn.ReadMessage()
 		if err != nil {
 			break
 		}
 		
-		// Send new visualization every 10-20 seconds
-		time.Sleep(time.Duration(10 + rand.Intn(10)) * time.Second)
-		viz := generateRandomVisualization()
-		if err := conn.WriteJSON(viz); err != nil {
-			log.Printf("WebSocket write failed: %v", err)
-			break
+		var msg map[string]interface{}
+		if err := json.Unmarshal(message, &msg); err != nil {
+			continue
+		}
+		
+		if msg["type"] == "request_shader" {
+			// Send new shader
+			shader := generateRandomShader()
+			if err := conn.WriteJSON(shader); err != nil {
+				log.Printf("WebSocket write failed: %v", err)
+				break
+			}
 		}
 	}
 	
@@ -96,80 +176,58 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Client disconnected: %s", conn.RemoteAddr())
 }
 
-func generateRandomVisualization() VisualizationParams {
-	vizTypes := []string{"quantum", "neural", "temporal"}
-	randomType := vizTypes[rand.Intn(len(vizTypes))]
+func generateRandomShader() ShaderParams {
+	// Select a random template
+	templateIndex := rand.Intn(len(shaderTemplates))
+	shaderCode := shaderTemplates[templateIndex]
 	
-	var params map[string]float64
+	// Select a random name
+	nameIndex := rand.Intn(len(shaderNames))
+	shaderName := shaderNames[nameIndex]
 	
-	switch randomType {
-	case "quantum":
-		params = map[string]float64{
-			"rotation":     rand.Float64() * 2.0,
-			"particleSize": 2.0 + rand.Float64()*4.0,
-			"waveHeight":   150.0 + rand.Float64()*150.0,
-			"colorPalette": float64(rand.Intn(5)),
-			"symmetry":     float64(rand.Intn(3)),
-			"complexity":   0.5 + rand.Float64()*0.5,
-		}
-	case "neural":
-		params = map[string]float64{
-			"particleCount":       80.0 + rand.Float64()*80.0,
-			"connectionThreshold": 0.2 + rand.Float64()*0.4,
-			"maxDistance":         120.0 + rand.Float64()*100.0,
-			"particleSize":        2.0 + rand.Float64()*4.0,
-			"colorPalette":        float64(rand.Intn(5)),
-			"symmetry":            float64(rand.Intn(3)),
-			"complexity":          0.5 + rand.Float64()*0.5,
-		}
-	case "temporal":
-		params = map[string]float64{
-			"waveWidth":   0.5 + rand.Float64()*2.0,
-			"waveHeight":  150.0 + rand.Float64()*150.0,
-			"fillOpacity": 0.1 + rand.Float64()*0.3,
-			"colorPalette": float64(rand.Intn(5)),
-			"symmetry":     float64(rand.Intn(3)),
-			"complexity":   0.5 + rand.Float64()*0.5,
-		}
-	}
+	// Add variations to the shader
+	shaderCode = modifyShader(shaderCode)
 	
-	return VisualizationParams{
-		Type:       randomType,
-		Parameters: params,
-		Duration:   15 + rand.Float64()*15,
-		ID:         fmt.Sprintf("%d", rand.Intn(1000)),
+	return ShaderParams{
+		Code: shaderCode,
+		Name: shaderName,
+		Type: "shader",
 	}
 }
 
-func getNextVisualization(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	viz := generateRandomVisualization()
-	json.NewEncoder(w).Encode(viz)
+func modifyShader(shader string) string {
+	// Simple modifications to create variations
+	modifications := []func(string) string{
+		func(s string) string { return strings.Replace(s, "0.5", fmt.Sprintf("%.2f", 0.3+rand.Float64()*0.4), 2) },
+		func(s string) string { return strings.Replace(s, "10.0", fmt.Sprintf("%.1f", 5.0+rand.Float64()*10.0), 1) },
+		func(s string) string { return strings.Replace(s, "8.0", fmt.Sprintf("%.1f", 5.0+rand.Float64()*10.0), 1) },
+		func(s string) string { return strings.Replace(s, "5.0", fmt.Sprintf("%.1f", 3.0+rand.Float64()*8.0), 1) },
+		func(s string) string { return strings.Replace(s, "20.0", fmt.Sprintf("%.1f", 15.0+rand.Float64()*20.0), 1) },
+		func(s string) string { return strings.Replace(s, "0.2", fmt.Sprintf("%.2f", 0.1+rand.Float64()*0.3), 1) },
+		func(s string) string { return strings.Replace(s, "0.19", fmt.Sprintf("%.2f", 0.15+rand.Float64()*0.1), 1) },
+		func(s string) string { return strings.Replace(s, "0.3", fmt.Sprintf("%.2f", 0.2+rand.Float64()*0.3), 1) },
+		func(s string) string { return strings.Replace(s, "0.1", fmt.Sprintf("%.2f", 0.05+rand.Float64()*0.2), 1) },
+	}
+	
+	// Apply random modifications
+	for i := 0; i < 3+rand.Intn(3); i++ {
+		modIndex := rand.Intn(len(modifications))
+		shader = modifications[modIndex](shader)
+	}
+	
+	return shader
 }
 
-func getCurrentVisualization(w http.ResponseWriter, r *http.Request) {
+func getNextShader(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	viz := generateRandomVisualization()
-	json.NewEncoder(w).Encode(viz)
+	shader := generateRandomShader()
+	json.NewEncoder(w).Encode(shader)
 }
 
-func generateVisualization(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Type string `json:"type"`
-	}
-	
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
-		return
-	}
-	
-	viz := generateRandomVisualization()
-	if req.Type != "" {
-		viz.Type = req.Type
-	}
-	
+func getCurrentShader(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(viz)
+	shader := generateRandomShader()
+	json.NewEncoder(w).Encode(shader)
 }
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {

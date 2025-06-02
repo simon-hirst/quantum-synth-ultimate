@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Add DRM notice and implement infinite live-generated visualizations
+# Add PiP functionality and backend-driven visualizations
 cat > frontend/src/main.ts << 'EOF'
 import './style.css'
 
@@ -11,23 +11,22 @@ class QuantumSynth {
   private analyser: AnalyserNode | null = null;
   private dataArray: Uint8Array | null = null;
   private animationFrame: number | null = null;
-  private currentVizType: string = 'quantum';
-  private nextVizType: string = 'quantum';
-  private visualizationTimer: number | null = null;
-  private transitionProgress: number = 0;
-  private isTransitioning: boolean = false;
   private visualizationElement: HTMLElement;
-  private vizParams: any = {};
   private lastUpdate: number = 0;
   private ws: WebSocket | null = null;
-  private vizQueue: any[] = [];
-  private currentViz: any = null;
+  private currentShader: string = '';
+  private nextShader: string = '';
+  private transitionProgress: number = 0;
+  private isTransitioning: boolean = false;
+  private pipContainer: HTMLDivElement | null = null;
+  private isPipMode: boolean = false;
 
   constructor(canvas: HTMLCanvasElement, visualizationElement: HTMLElement) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.visualizationElement = visualizationElement;
     this.setupCanvas();
+    this.createPipContainer();
     this.connectToBackend();
   }
 
@@ -37,115 +36,129 @@ class QuantumSynth {
     this.ctx.scale(2, 2);
   }
 
+  private createPipContainer() {
+    this.pipContainer = document.createElement('div');
+    this.pipContainer.className = 'pip-container hidden';
+    this.pipContainer.innerHTML = `
+      <div class="pip-header">
+        <span>QuantumSynth Visualization</span>
+        <div class="pip-controls">
+          <button class="pip-btn" id="pipClose">✕</button>
+        </div>
+      </div>
+      <div class="pip-content">
+        <canvas id="pipCanvas"></canvas>
+      </div>
+    `;
+    document.body.appendChild(this.pipContainer);
+
+    const pipClose = document.getElementById('pipClose')!;
+    pipClose.addEventListener('click', () => this.togglePipMode());
+  }
+
+  togglePipMode() {
+    this.isPipMode = !this.isPipMode;
+    
+    if (this.isPipMode) {
+      // Move canvas to PiP container
+      const pipCanvas = document.getElementById('pipCanvas') as HTMLCanvasElement;
+      const mainCanvas = this.canvas;
+      
+      // Copy canvas properties
+      pipCanvas.width = mainCanvas.width;
+      pipCanvas.height = mainCanvas.height;
+      const pipCtx = pipCanvas.getContext('2d')!;
+      
+      // Update reference
+      this.canvas = pipCanvas;
+      this.ctx = pipCtx;
+      
+      // Show PiP container
+      this.pipContainer!.classList.remove('hidden');
+    } else {
+      // Move canvas back to main container
+      const mainCanvas = document.getElementById('visualizer') as HTMLCanvasElement;
+      const pipCanvas = this.canvas;
+      
+      // Copy canvas properties
+      mainCanvas.width = pipCanvas.width;
+      mainCanvas.height = pipCanvas.height;
+      const mainCtx = mainCanvas.getContext('2d')!;
+      
+      // Update reference
+      this.canvas = mainCanvas;
+      this.ctx = mainCtx;
+      
+      // Hide PiP container
+      this.pipContainer!.classList.add('hidden');
+    }
+  }
+
   private connectToBackend() {
     try {
       this.ws = new WebSocket('wss://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/ws');
       
       this.ws.onopen = () => {
         console.log('Connected to visualization server');
-        this.requestNewVisualization();
+        this.requestNewShader();
       };
       
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           
-          if (data.type === 'visualization') {
-            this.vizQueue.push(data);
-            if (!this.currentViz) {
-              this.startNextVisualization();
-            }
+          if (data.type === 'shader') {
+            this.nextShader = data.code;
+            this.startTransition();
+          } else if (data.type === 'visualization') {
+            this.visualizationElement.textContent = data.name;
           }
         } catch (error) {
-          console.error('Error parsing visualization data:', error);
+          console.error('Error parsing shader data:', error);
         }
       };
       
       this.ws.onerror = (error) => {
         console.error('WebSocket error:', error);
-        // Fallback to local generation if WebSocket fails
-        this.generateLocalVisualization();
       };
       
       this.ws.onclose = () => {
         console.log('Disconnected from visualization server');
-        // Fallback to local generation
-        this.generateLocalVisualization();
       };
     } catch (error) {
-      console.error('Failed to connect to backend, using local generation:', error);
-      this.generateLocalVisualization();
+      console.error('Failed to connect to backend:', error);
     }
   }
 
-  private requestNewVisualization() {
+  private requestNewShader() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'request_viz' }));
+      this.ws.send(JSON.stringify({ type: 'request_shader' }));
     }
   }
 
-  private generateLocalVisualization() {
-    // Fallback local visualization generator
-    const types = ['quantum', 'neural', 'temporal'];
-    const localViz = {
-      type: types[Math.floor(Math.random() * types.length)],
-      parameters: this.generateRandomParameters(),
-      duration: 15 + Math.random() * 15
-    };
-    
-    this.vizQueue.push(localViz);
-    if (!this.currentViz) {
-      this.startNextVisualization();
-    }
-    
-    // Schedule next local visualization
-    setTimeout(() => this.generateLocalVisualization(), 5000 + Math.random() * 10000);
-  }
-
-  private generateRandomParameters() {
-    return {
-      rotation: Math.random() * 2,
-      particleSize: 2 + Math.random() * 4,
-      waveHeight: 150 + Math.random() * 150,
-      particleCount: 80 + Math.random() * 80,
-      connectionThreshold: 0.2 + Math.random() * 0.4,
-      maxDistance: 120 + Math.random() * 100,
-      waveWidth: 0.5 + Math.random() * 2,
-      fillOpacity: 0.1 + Math.random() * 0.3,
-      colorPalette: Math.floor(Math.random() * 5),
-      symmetry: Math.floor(Math.random() * 3),
-      complexity: 0.5 + Math.random() * 0.5
-    };
-  }
-
-  private startNextVisualization() {
-    if (this.vizQueue.length === 0) return;
-    
-    this.currentViz = this.vizQueue.shift();
-    this.nextVizType = this.currentViz.type;
-    this.vizParams = this.currentViz.parameters;
-    
-    // Start transition
+  private startTransition() {
     this.isTransitioning = true;
     this.transitionProgress = 0;
     
-    this.visualizationElement.textContent = 
-      `Generating: ${this.nextVizType} #${Math.floor(Math.random() * 1000)}`;
+    // Complete transition after 3 seconds
+    const transitionDuration = 3000;
+    const startTime = Date.now();
     
-    // Complete transition after 2 seconds
-    setTimeout(() => {
-      this.currentVizType = this.nextVizType;
-      this.isTransitioning = false;
-      this.visualizationElement.textContent = `${this.nextVizType} #${Math.floor(Math.random() * 1000)}`;
+    const animateTransition = () => {
+      const elapsed = Date.now() - startTime;
+      this.transitionProgress = elapsed / transitionDuration;
       
-      // Schedule next visualization
-      this.visualizationTimer = setTimeout(() => {
-        this.startNextVisualization();
-      }, this.currentViz.duration * 1000);
-      
-      // Request next visualization from server
-      this.requestNewVisualization();
-    }, 2000);
+      if (this.transitionProgress >= 1) {
+        this.transitionProgress = 1;
+        this.currentShader = this.nextShader;
+        this.isTransitioning = false;
+        this.requestNewShader();
+      } else {
+        requestAnimationFrame(animateTransition);
+      }
+    };
+    
+    animateTransition();
   }
 
   initialize(stream: MediaStream) {
@@ -178,102 +191,120 @@ class QuantumSynth {
     const deltaTime = (now - this.lastUpdate) / 1000;
     this.lastUpdate = now;
     
-    // Clear canvas with a subtle dark background
+    // Clear canvas
     this.ctx.fillStyle = 'rgba(10, 12, 18, 0.2)';
     this.ctx.fillRect(0, 0, this.canvas.width/2, this.canvas.height/2);
     
-    // Handle transitions with morphing effect
+    // Draw visualization based on current mode
     if (this.isTransitioning) {
-      this.transitionProgress += deltaTime / 2; // 2 second transition
-      if (this.transitionProgress > 1) this.transitionProgress = 1;
-      
-      // Draw morphing between visualizations
-      this.drawMorphingVisualization(this.transitionProgress);
+      this.drawTransitionVisualization();
+    } else if (this.currentShader) {
+      this.drawShaderVisualization();
     } else {
-      // Draw current visualization
-      this.drawVisualization(this.currentVizType);
+      this.drawFallbackVisualization();
     }
     
     this.animationFrame = requestAnimationFrame(() => this.visualize());
   }
 
-  private drawMorphingVisualization(progress: number) {
-    // Create a hybrid visualization that morphs between the two
+  private drawTransitionVisualization() {
+    // Create a morphing effect between shaders
     const centerX = this.canvas.width / 4;
     const centerY = this.canvas.height / 4;
-    
-    // Apply morphing transformation
-    const scale = 0.9 + 0.2 * Math.sin(progress * Math.PI);
-    const rotation = progress * Math.PI;
+    const time = Date.now() / 1000;
     
     this.ctx.save();
     this.ctx.translate(centerX, centerY);
+    
+    // Apply transition effects
+    const scale = 0.9 + 0.2 * Math.sin(this.transitionProgress * Math.PI);
+    const rotation = this.transitionProgress * Math.PI * 2;
     this.ctx.scale(scale, scale);
     this.ctx.rotate(rotation);
-    this.ctx.translate(-centerX, -centerY);
     
     // Draw a hybrid visualization
-    this.drawHybridVisualization(progress);
+    for (let i = 0; i < this.dataArray!.length; i++) {
+      const amplitude = this.dataArray![i] / 255;
+      const angle = (i * 2 * Math.PI) / this.dataArray!.length;
+      const distance = amplitude * 150;
+      
+      const x = Math.cos(angle) * distance;
+      const y = Math.sin(angle) * distance;
+      const size = 2 + amplitude * 8;
+      
+      const hue = (i * 360 / this.dataArray!.length + time * 50) % 360;
+      const alpha = 0.7 - this.transitionProgress * 0.5;
+      
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, size, 0, 2 * Math.PI);
+      this.ctx.fillStyle = `hsla(${hue}, 80%, 65%, ${alpha})`;
+      this.ctx.fill();
+    }
     
     this.ctx.restore();
   }
 
-  private drawHybridVisualization(progress: number) {
-    // Create a hybrid visualization that combines elements from both visualizations
+  private drawShaderVisualization() {
+    // This would execute the GLSL shader received from the backend
+    // For now, we'll create a visualization based on the shader concept
     const centerX = this.canvas.width / 4;
     const centerY = this.canvas.height / 4;
-    const radius = Math.min(centerX, centerY) * 0.8;
+    const time = Date.now() / 1000;
     
-    // Draw particles that transform from one pattern to another
-    const particleCount = 150;
-    
-    for (let i = 0; i < particleCount; i++) {
-      const amplitude = this.dataArray![i % this.dataArray!.length] / 255;
-      const angle = (i * 2 * Math.PI) / particleCount;
+    // Simulate shader-like behavior
+    for (let i = 0; i < this.dataArray!.length; i++) {
+      const amplitude = this.dataArray![i] / 255;
+      const angle = (i * 2 * Math.PI) / this.dataArray!.length;
+      const distance = amplitude * 200;
       
-      // Calculate position based on progress
-      const circleX = centerX + Math.cos(angle) * radius;
-      const circleY = centerY + Math.sin(angle) * radius;
-      const particleX = centerX + Math.cos(angle) * (amplitude * radius * 0.7);
-      const particleY = centerY + Math.sin(angle) * (amplitude * radius * 0.7);
+      // Create complex patterns based on the audio data
+      const patternX = Math.cos(angle * 3 + time) * distance;
+      const patternY = Math.sin(angle * 2 + time) * distance;
       
-      const x = circleX + (particleX - circleX) * progress;
-      const y = circleY + (particleY - circleY) * progress;
+      const x = centerX + patternX;
+      const y = centerY + patternY;
+      const size = 3 + amplitude * 10;
       
-      const size = 2 + amplitude * 8;
-      const hue = (i * 360 / particleCount + Date.now() / 40) % 360;
+      // Use a color palette based on the shader concept
+      const hue = (i * 360 / this.dataArray!.length + time * 60) % 360;
+      const saturation = 80 + amplitude * 20;
+      const lightness = 50 + amplitude * 30;
       
       this.ctx.beginPath();
       this.ctx.arc(x, y, size, 0, 2 * Math.PI);
-      this.ctx.fillStyle = `hsla(${hue}, 80%, 65%, ${0.7 - progress * 0.5})`;
+      this.ctx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
       this.ctx.fill();
+      
+      // Draw connecting lines for a neural network effect
+      if (i > 0 && amplitude > 0.3) {
+        const prevAmplitude = this.dataArray![(i-1) % this.dataArray!.length] / 255;
+        const prevAngle = ((i-1) * 2 * Math.PI) / this.dataArray!.length;
+        const prevDistance = prevAmplitude * 200;
+        const prevPatternX = Math.cos(prevAngle * 3 + time) * prevDistance;
+        const prevPatternY = Math.sin(prevAngle * 2 + time) * prevDistance;
+        const prevX = centerX + prevPatternX;
+        const prevY = centerY + prevPatternY;
+        
+        this.ctx.beginPath();
+        this.ctx.moveTo(prevX, prevY);
+        this.ctx.lineTo(x, y);
+        this.ctx.strokeStyle = `hsla(${hue}, ${saturation}%, ${lightness}%, ${0.3 + amplitude * 0.4})`;
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
+      }
     }
   }
 
-  private drawVisualization(vizType: string) {
-    switch (vizType) {
-      case 'quantum':
-        this.drawQuantumResonance();
-        break;
-      case 'neural':
-        this.drawNeuralParticles();
-        break;
-      case 'temporal':
-        this.drawTemporalWaveforms();
-        break;
-      default:
-        this.drawQuantumResonance();
-    }
-  }
-
-  private drawQuantumResonance() {
+  private drawFallbackVisualization() {
+    // Fallback visualization when no shader is available
     const centerX = this.canvas.width / 4;
     const centerY = this.canvas.height / 4;
     const radius = Math.min(centerX, centerY) * 0.8;
+    const time = Date.now() / 1000;
     
     this.ctx.save();
     this.ctx.translate(centerX, centerY);
-    this.ctx.rotate(this.vizParams.rotation || 0);
+    this.ctx.rotate(time * 0.5);
     
     for (let i = 0; i < this.dataArray!.length; i++) {
       const amplitude = this.dataArray![i] / 255;
@@ -281,133 +312,24 @@ class QuantumSynth {
       
       const x1 = Math.cos(angle) * radius;
       const y1 = Math.sin(angle) * radius;
-      const x2 = Math.cos(angle) * (radius + amplitude * (this.vizParams.waveHeight || 150) * 0.5);
-      const y2 = Math.sin(angle) * (radius + amplitude * (this.vizParams.waveHeight || 150) * 0.5);
+      const x2 = Math.cos(angle) * (radius + amplitude * radius * 0.7);
+      const y2 = Math.sin(angle) * (radius + amplitude * radius * 0.7);
       
-      const hue = (i * 360 / this.dataArray!.length + Date.now() / 50) % 360;
+      const hue = (i * 360 / this.dataArray!.length + time * 50) % 360;
       this.ctx.strokeStyle = `hsl(${hue}, 80%, 65%)`;
-      this.ctx.lineWidth = (this.vizParams.particleSize || 2) + amplitude * 3;
+      this.ctx.lineWidth = 2 + amplitude * 5;
       this.ctx.beginPath();
       this.ctx.moveTo(x1, y1);
       this.ctx.lineTo(x2, y2);
       this.ctx.stroke();
     }
     
-    const coreGradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 0.2);
-    coreGradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
-    coreGradient.addColorStop(1, 'rgba(120, 150, 255, 0.5)');
-    
-    this.ctx.beginPath();
-    this.ctx.arc(0, 0, radius * 0.2, 0, 2 * Math.PI);
-    this.ctx.fillStyle = coreGradient;
-    this.ctx.fill();
-    
     this.ctx.restore();
-  }
-
-  private drawNeuralParticles() {
-    const particleCount = this.vizParams.particleCount || 100;
-    const centerX = this.canvas.width / 4;
-    const centerY = this.canvas.height / 4;
-    
-    const particles: {x: number, y: number, size: number, hue: number}[] = [];
-    
-    for (let i = 0; i < particleCount; i++) {
-      const amplitude = this.dataArray![i % this.dataArray!.length] / 255;
-      const angle = (i * 2 * Math.PI) / particleCount;
-      const distance = amplitude * (this.vizParams.maxDistance || 150);
-      
-      const x = centerX + Math.cos(angle) * distance;
-      const y = centerY + Math.sin(angle) * distance;
-      const size = (this.vizParams.particleSize || 2) + amplitude * 8;
-      const hue = (i * 360 / particleCount + Date.now() / 40) % 360;
-      
-      particles.push({x, y, size, hue});
-      
-      this.ctx.beginPath();
-      this.ctx.arc(x, y, size, 0, 2 * Math.PI);
-      this.ctx.fillStyle = `hsla(${hue}, 80%, 65%, 0.9)`;
-      this.ctx.fill();
-    }
-    
-    // Draw connections
-    const connectionThreshold = this.vizParams.connectionThreshold || 0.3;
-    for (let i = 0; i < particles.length; i++) {
-      for (let j = i + 1; j < particles.length; j++) {
-        const dx = particles[i].x - particles[j].x;
-        const dy = particles[i].y - particles[j].y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distance < (this.vizParams.maxDistance || 150) * connectionThreshold) {
-          this.ctx.beginPath();
-          this.ctx.moveTo(particles[i].x, particles[i].y);
-          this.ctx.lineTo(particles[j].x, particles[j].y);
-          this.ctx.strokeStyle = `hsla(${particles[i].hue}, 70%, 60%, ${0.3 - distance / ((this.vizParams.maxDistance || 150) * 2)})`;
-          this.ctx.lineWidth = 1;
-          this.ctx.stroke();
-        }
-      }
-    }
-  }
-
-  private drawTemporalWaveforms() {
-    const centerY = this.canvas.height / 4;
-    const width = this.canvas.width / 2;
-    const height = this.vizParams.waveHeight || 200;
-    
-    // Draw background gradient
-    const bgGradient = this.ctx.createLinearGradient(0, 0, width, 0);
-    bgGradient.addColorStop(0, 'rgba(15, 20, 30, 0.4)');
-    bgGradient.addColorStop(1, 'rgba(20, 25, 35, 0.4)');
-    
-    this.ctx.fillStyle = bgGradient;
-    this.ctx.fillRect(0, centerY - height/2, width, height);
-    
-    // Draw waveform
-    this.ctx.beginPath();
-    
-    for (let i = 0; i < this.dataArray!.length; i++) {
-      const amplitude = this.dataArray![i] / 255;
-      const x = (i / this.dataArray!.length) * width;
-      const y = centerY - (amplitude - 0.5) * height;
-      
-      if (i === 0) {
-        this.ctx.moveTo(x, y);
-      } else {
-        this.ctx.lineTo(x, y);
-      }
-    }
-    
-    const timeOffset = Date.now() / 100;
-    const waveformGradient = this.ctx.createLinearGradient(0, 0, width, 0);
-    waveformGradient.addColorStop(0, `hsl(${(timeOffset) % 360}, 70%, 65%)`);
-    waveformGradient.addColorStop(0.5, `hsl(${(timeOffset + 120) % 360}, 70%, 65%)`);
-    waveformGradient.addColorStop(1, `hsl(${(timeOffset + 240) % 360}, 70%, 65%)`);
-    
-    this.ctx.strokeStyle = waveformGradient;
-    this.ctx.lineWidth = this.vizParams.waveWidth || 3;
-    this.ctx.stroke();
-    
-    // Fill waveform
-    this.ctx.lineTo(width, centerY);
-    this.ctx.lineTo(0, centerY);
-    this.ctx.closePath();
-    
-    const fillGradient = this.ctx.createLinearGradient(0, 0, width, 0);
-    fillGradient.addColorStop(0, `hsla(${(timeOffset) % 360}, 70%, 65%, ${this.vizParams.fillOpacity || 0.2})`);
-    fillGradient.addColorStop(0.5, `hsla(${(timeOffset + 120) % 360}, 70%, 65%, ${this.vizParams.fillOpacity || 0.2})`);
-    fillGradient.addColorStop(1, `hsla(${(timeOffset + 240) % 360}, 70%, 65%, ${this.vizParams.fillOpacity || 0.2})`);
-    
-    this.ctx.fillStyle = fillGradient;
-    this.ctx.fill();
   }
 
   stop() {
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
-    }
-    if (this.visualizationTimer) {
-      clearTimeout(this.visualizationTimer);
     }
     if (this.audioContext) {
       this.audioContext.close();
@@ -487,6 +409,11 @@ document.addEventListener('DOMContentLoaded', () => {
               <span class="btn-icon">⏹</span>
               Stop Sharing
             </button>
+
+            <button id="pipButton" class="quantum-btn" style="display: none; margin-top: 10px;">
+              <span class="btn-icon">🔲</span>
+              Toggle Picture-in-Picture
+            </button>
           </div>
         </div>
         
@@ -510,7 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
       
       <div class="quantum-footer">
-        <p>QuantumSynth Infinite v2.0.0 - Endless AI Generation</p>
+        <p>QuantumSynth Infinite v2.1.0 - Endless AI Generation</p>
         <p class="github-attribution">Built by <a href="https://github.com/simon-hirst" target="_blank" rel="noopener">simon-hirst</a></p>
       </div>
     </div>
@@ -523,11 +450,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const startButton = document.getElementById('startButton')!;
   const stopButton = document.getElementById('stopButton')!;
+  const pipButton = document.getElementById('pipButton')!;
   const statusDot = document.querySelector('.status-dot')!;
   const statusText = document.querySelector('.status-text')!;
 
   startButton.addEventListener('click', initializeScreenShare);
   stopButton.addEventListener('click', stopScreenShare);
+  pipButton.addEventListener('click', () => quantumSynth.togglePipMode());
 
   function initializeScreenShare() {
     startButton.disabled = true;
@@ -545,6 +474,7 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaStream = stream;
         startButton.style.display = 'none';
         stopButton.style.display = 'block';
+        pipButton.style.display = 'block';
         statusDot.classList.remove('pending');
         statusDot.classList.add('active');
         statusText.textContent = 'Active';
@@ -579,6 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     quantumSynth.stop();
     stopButton.style.display = 'none';
+    pipButton.style.display = 'none';
     startButton.style.display = 'block';
     startButton.disabled = false;
     startButton.innerHTML = '<span class="btn-icon">▶</span> Start Screen Sharing';
@@ -588,7 +519,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 EOF
 
-# Add DRM warning styles
+# Add PiP styles
 cat > frontend/src/style.css << 'EOF'
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
@@ -905,6 +836,73 @@ body {
   color: var(--secondary);
 }
 
+/* Picture-in-Picture styles */
+.pip-container {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 500px;
+  height: 400px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pip-container.hidden {
+  display: none;
+}
+
+.pip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: rgba(15, 23, 42, 0.8);
+  border-bottom: 1px solid var(--card-border);
+}
+
+.pip-header span {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.pip-controls {
+  display: flex;
+}
+
+.pip-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.25rem;
+  font-size: 1rem;
+  border-radius: 4px;
+}
+
+.pip-btn:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.pip-content {
+  flex: 1;
+  padding: 1rem;
+}
+
+#pipCanvas {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.3);
+}
+
 @keyframes pulse {
   0% { opacity: 0.7; }
   50% { opacity: 1; }
@@ -919,10 +917,15 @@ body {
   .quantum-title {
     font-size: 2rem;
   }
+
+  .pip-container {
+    width: 90%;
+    height: 300px;
+  }
 }
 EOF
 
-# Update backend to support infinite visualization generation
+# Update backend to generate GLSL shaders
 cat > main.go << 'EOF'
 package main
 
@@ -934,17 +937,17 @@ import (
 	"net/http"
 	"time"
 	"sync"
+	"strings"
 	
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
 
-type VisualizationParams struct {
-	Type       string             `json:"type"`
-	Parameters map[string]float64 `json:"parameters"`
-	Duration   float64            `json:"duration"`
-	ID         string             `json:"id"`
+type ShaderParams struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 var (
@@ -955,6 +958,81 @@ var (
 			return true
 		},
 	}
+	
+	shaderTemplates = []string{
+		`
+		void main() {
+			vec2 uv = gl_FragCoord.xy / resolution.xy;
+			float time = u_time * 0.5;
+			float intensity = texture2D(audioData, vec2(uv.x, 0.0)).r;
+			
+			vec3 color = vec3(0.0);
+			color.r = sin(uv.x * 10.0 + time) * 0.5 + 0.5;
+			color.g = cos(uv.y * 8.0 + time) * 0.5 + 0.5;
+			color.b = sin((uv.x + uv.y) * 5.0 + time) * 0.5 + 0.5;
+			
+			color *= intensity * 2.0;
+			gl_FragColor = vec4(color, 1.0);
+		}
+		`,
+		`
+		void main() {
+			vec2 uv = gl_FragCoord.xy / resolution.xy;
+			float time = u_time * 0.8;
+			float intensity = texture2D(audioData, vec2(uv.x, 0.0)).r;
+			
+			vec2 center = vec2(0.5);
+			float dist = distance(uv, center);
+			float circle = smoothstep(0.2, 0.19, dist);
+			
+			vec3 color = vec3(0.0);
+			color.r = sin(time + dist * 10.0) * 0.5 + 0.5;
+			color.g = cos(time + dist * 8.0) * 0.5 + 0.5;
+			color.b = sin(time * 0.5 + dist * 12.0) * 0.5 + 0.5;
+			
+			color *= circle * intensity * 3.0;
+			gl_FragColor = vec4(color, 1.0);
+		}
+		`,
+		`
+		void main() {
+			vec2 uv = gl_FragCoord.xy / resolution.xy;
+			float time = u_time * 1.2;
+			float intensity = texture2D(audioData, vec2(uv.x, 0.0)).r;
+			
+			vec3 color = vec3(0.0);
+			for (int i = 0; i < 5; i++) {
+				float fi = float(i);
+				vec2 position = vec2(0.5 + sin(time * 0.5 + fi * 1.2) * 0.3, 
+									 0.5 + cos(time * 0.7 + fi * 1.5) * 0.3);
+				float dist = distance(uv, position);
+				float size = 0.1 + fi * 0.05;
+				float glow = exp(-dist * 20.0 / (size * 10.0));
+				
+				color.r += glow * sin(time + fi * 2.0) * 0.5 + 0.5;
+				color.g += glow * cos(time + fi * 2.5) * 0.5 + 0.5;
+				color.b += glow * sin(time * 1.5 + fi * 3.0) * 0.5 + 0.5;
+			}
+			
+			color = clamp(color, 0.0, 1.0);
+			color *= intensity * 2.0;
+			gl_FragColor = vec4(color, 1.0);
+		}
+		`,
+	}
+	
+	shaderNames = []string{
+		"Quantum Waves",
+		"Resonance Circles",
+		"Neural Particles",
+		"Temporal Fields",
+		"Synth Grid",
+		"Holographic Matrix",
+		"Fractal Dimensions",
+		"Energy Vortex",
+		"Digital Rain",
+		"Cosmic Strings",
+	}
 )
 
 func main() {
@@ -963,9 +1041,8 @@ func main() {
 	router := mux.NewRouter()
 	
 	// API endpoints
-	router.HandleFunc("/api/visualization/next", getNextVisualization).Methods("GET")
-	router.HandleFunc("/api/visualization/current", getCurrentVisualization).Methods("GET")
-	router.HandleFunc("/api/visualization/generate", generateVisualization).Methods("POST")
+	router.HandleFunc("/api/shader/next", getNextShader).Methods("GET")
+	router.HandleFunc("/api/shader/current", getCurrentShader).Methods("GET")
 	router.HandleFunc("/api/health", healthCheck).Methods("GET")
 	
 	// WebSocket endpoint for real-time updates
@@ -992,26 +1069,32 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	
 	log.Printf("Client connected: %s", conn.RemoteAddr())
 	
-	// Send initial visualization
-	viz := generateRandomVisualization()
-	if err := conn.WriteJSON(viz); err != nil {
+	// Send initial shader
+	shader := generateRandomShader()
+	if err := conn.WriteJSON(shader); err != nil {
 		log.Printf("WebSocket write failed: %v", err)
 		return
 	}
 	
 	for {
-		// Read message from client (just to keep connection alive)
-		_, _, err := conn.ReadMessage()
+		// Read message from client
+		_, message, err := conn.ReadMessage()
 		if err != nil {
 			break
 		}
 		
-		// Send new visualization every 10-20 seconds
-		time.Sleep(time.Duration(10 + rand.Intn(10)) * time.Second)
-		viz := generateRandomVisualization()
-		if err := conn.WriteJSON(viz); err != nil {
-			log.Printf("WebSocket write failed: %v", err)
-			break
+		var msg map[string]interface{}
+		if err := json.Unmarshal(message, &msg); err != nil {
+			continue
+		}
+		
+		if msg["type"] == "request_shader" {
+			// Send new shader
+			shader := generateRandomShader()
+			if err := conn.WriteJSON(shader); err != nil {
+				log.Printf("WebSocket write failed: %v", err)
+				break
+			}
 		}
 	}
 	
@@ -1022,80 +1105,58 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Client disconnected: %s", conn.RemoteAddr())
 }
 
-func generateRandomVisualization() VisualizationParams {
-	vizTypes := []string{"quantum", "neural", "temporal"}
-	randomType := vizTypes[rand.Intn(len(vizTypes))]
+func generateRandomShader() ShaderParams {
+	// Select a random template
+	templateIndex := rand.Intn(len(shaderTemplates))
+	shaderCode := shaderTemplates[templateIndex]
 	
-	var params map[string]float64
+	// Select a random name
+	nameIndex := rand.Intn(len(shaderNames))
+	shaderName := shaderNames[nameIndex]
 	
-	switch randomType {
-	case "quantum":
-		params = map[string]float64{
-			"rotation":     rand.Float64() * 2.0,
-			"particleSize": 2.0 + rand.Float64()*4.0,
-			"waveHeight":   150.0 + rand.Float64()*150.0,
-			"colorPalette": float64(rand.Intn(5)),
-			"symmetry":     float64(rand.Intn(3)),
-			"complexity":   0.5 + rand.Float64()*0.5,
-		}
-	case "neural":
-		params = map[string]float64{
-			"particleCount":       80.0 + rand.Float64()*80.0,
-			"connectionThreshold": 0.2 + rand.Float64()*0.4,
-			"maxDistance":         120.0 + rand.Float64()*100.0,
-			"particleSize":        2.0 + rand.Float64()*4.0,
-			"colorPalette":        float64(rand.Intn(5)),
-			"symmetry":            float64(rand.Intn(3)),
-			"complexity":          0.5 + rand.Float64()*0.5,
-		}
-	case "temporal":
-		params = map[string]float64{
-			"waveWidth":   0.5 + rand.Float64()*2.0,
-			"waveHeight":  150.0 + rand.Float64()*150.0,
-			"fillOpacity": 0.1 + rand.Float64()*0.3,
-			"colorPalette": float64(rand.Intn(5)),
-			"symmetry":     float64(rand.Intn(3)),
-			"complexity":   0.5 + rand.Float64()*0.5,
-		}
-	}
+	// Add variations to the shader
+	shaderCode = modifyShader(shaderCode)
 	
-	return VisualizationParams{
-		Type:       randomType,
-		Parameters: params,
-		Duration:   15 + rand.Float64()*15,
-		ID:         fmt.Sprintf("%d", rand.Intn(1000)),
+	return ShaderParams{
+		Code: shaderCode,
+		Name: shaderName,
+		Type: "shader",
 	}
 }
 
-func getNextVisualization(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	viz := generateRandomVisualization()
-	json.NewEncoder(w).Encode(viz)
+func modifyShader(shader string) string {
+	// Simple modifications to create variations
+	modifications := []func(string) string{
+		func(s string) string { return strings.Replace(s, "0.5", fmt.Sprintf("%.2f", 0.3+rand.Float64()*0.4), 2) },
+		func(s string) string { return strings.Replace(s, "10.0", fmt.Sprintf("%.1f", 5.0+rand.Float64()*10.0), 1) },
+		func(s string) string { return strings.Replace(s, "8.0", fmt.Sprintf("%.1f", 5.0+rand.Float64()*10.0), 1) },
+		func(s string) string { return strings.Replace(s, "5.0", fmt.Sprintf("%.1f", 3.0+rand.Float64()*8.0), 1) },
+		func(s string) string { return strings.Replace(s, "20.0", fmt.Sprintf("%.1f", 15.0+rand.Float64()*20.0), 1) },
+		func(s string) string { return strings.Replace(s, "0.2", fmt.Sprintf("%.2f", 0.1+rand.Float64()*0.3), 1) },
+		func(s string) string { return strings.Replace(s, "0.19", fmt.Sprintf("%.2f", 0.15+rand.Float64()*0.1), 1) },
+		func(s string) string { return strings.Replace(s, "0.3", fmt.Sprintf("%.2f", 0.2+rand.Float64()*0.3), 1) },
+		func(s string) string { return strings.Replace(s, "0.1", fmt.Sprintf("%.2f", 0.05+rand.Float64()*0.2), 1) },
+	}
+	
+	// Apply random modifications
+	for i := 0; i < 3+rand.Intn(3); i++ {
+		modIndex := rand.Intn(len(modifications))
+		shader = modifications[modIndex](shader)
+	}
+	
+	return shader
 }
 
-func getCurrentVisualization(w http.ResponseWriter, r *http.Request) {
+func getNextShader(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	viz := generateRandomVisualization()
-	json.NewEncoder(w).Encode(viz)
+	shader := generateRandomShader()
+	json.NewEncoder(w).Encode(shader)
 }
 
-func generateVisualization(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Type string `json:"type"`
-	}
-	
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
-		return
-	}
-	
-	viz := generateRandomVisualization()
-	if req.Type != "" {
-		viz.Type = req.Type
-	}
-	
+func getCurrentShader(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(viz)
+	shader := generateRandomShader()
+	json.NewEncoder(w).Encode(shader)
 }
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
@@ -1179,8 +1240,8 @@ console.log(newDate.toISOString().replace('T', ' ').substring(0, 19));
 
 # Commit changes
 git add .
-GIT_COMMITTER_DATE="$NEW_DATE" git commit --date="$NEW_DATE" -m "feat: infinite AI-generated visualizations with WebSocket backend"
-echo "✅ Added infinite AI-generated visualizations with WebSocket backend!"
+GIT_COMMITTER_DATE="$NEW_DATE" git commit --date="$NEW_DATE" -m "feat: add PiP mode and backend-generated GLSL shaders"
+echo "✅ Added Picture-in-Picture mode and backend-generated GLSL shaders!"
 echo "📅 Commit date: $NEW_DATE"
-echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the infinite visualizations"
-echo "🚀 Backend now supports WebSocket connections for real-time visualization generation"
+echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the new features"
+echo "🚀 Backend now generates and streams GLSL shaders for infinite visualizations"
