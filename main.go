@@ -7,12 +7,10 @@ import (
 	"math/rand"
 	"net/http"
 	"time"
-	"sync"
 	"strings"
 	
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"github.com/gorilla/websocket"
 )
 
 type ShaderParams struct {
@@ -22,14 +20,6 @@ type ShaderParams struct {
 }
 
 var (
-	clients   = make(map[*websocket.Conn]bool)
-	clientsMu sync.Mutex
-	upgrader  = websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-	}
-	
 	shaderTemplates = []string{
 		`
 		void main() {
@@ -116,9 +106,6 @@ func main() {
 	router.HandleFunc("/api/shader/current", getCurrentShader).Methods("GET")
 	router.HandleFunc("/api/health", healthCheck).Methods("GET")
 	
-	// WebSocket endpoint for real-time updates
-	router.HandleFunc("/ws", handleWebSocket)
-	
 	// Serve frontend
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./frontend/dist/")))
 	
@@ -126,54 +113,18 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", handlers.CORS(headers, methods, origins)(router)))
 }
 
-func handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("WebSocket upgrade failed: %v", err)
-		return
-	}
-	defer conn.Close()
-	
-	clientsMu.Lock()
-	clients[conn] = true
-	clientsMu.Unlock()
-	
-	log.Printf("Client connected: %s", conn.RemoteAddr())
-	
-	// Send initial shader
+func getNextShader(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	shader := generateRandomShader()
-	if err := conn.WriteJSON(shader); err != nil {
-		log.Printf("WebSocket write failed: %v", err)
-		return
-	}
-	
-	for {
-		// Read message from client
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			break
-		}
-		
-		var msg map[string]interface{}
-		if err := json.Unmarshal(message, &msg); err != nil {
-			continue
-		}
-		
-		if msg["type"] == "request_shader" {
-			// Send new shader
-			shader := generateRandomShader()
-			if err := conn.WriteJSON(shader); err != nil {
-				log.Printf("WebSocket write failed: %v", err)
-				break
-			}
-		}
-	}
-	
-	clientsMu.Lock()
-	delete(clients, conn)
-	clientsMu.Unlock()
-	
-	log.Printf("Client disconnected: %s", conn.RemoteAddr())
+	json.NewEncoder(w).Encode(shader)
+}
+
+func getCurrentShader(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	shader := generateRandomShader()
+	json.NewEncoder(w).Encode(shader)
 }
 
 func generateRandomShader() ShaderParams {
@@ -218,29 +169,17 @@ func modifyShader(shader string) string {
 	return shader
 }
 
-func getNextShader(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	shader := generateRandomShader()
-	json.NewEncoder(w).Encode(shader)
-}
-
-func getCurrentShader(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	shader := generateRandomShader()
-	json.NewEncoder(w).Encode(shader)
-}
-
 func healthCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"timestamp": time.Now(),
-		"clients":   len(clients),
 	})
 }
 
 var (
 	headers = handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
-	methods = handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE"})
+	methods = handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"})
 	origins = handlers.AllowedOrigins([]string{"*"})
 )

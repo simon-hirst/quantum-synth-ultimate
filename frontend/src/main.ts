@@ -9,13 +9,14 @@ class QuantumSynth {
   private animationFrame: number | null = null;
   private visualizationElement: HTMLElement;
   private lastUpdate: number = 0;
-  private ws: WebSocket | null = null;
   private currentShader: string = '';
   private nextShader: string = '';
   private transitionProgress: number = 0;
   private isTransitioning: boolean = false;
   private pipContainer: HTMLDivElement | null = null;
   private isPipMode: boolean = false;
+  private pollingInterval: number | null = null;
+  private currentVizName: string = 'Connecting to AI...';
 
   constructor(canvas: HTMLCanvasElement, visualizationElement: HTMLElement) {
     this.canvas = canvas;
@@ -23,7 +24,7 @@ class QuantumSynth {
     this.visualizationElement = visualizationElement;
     this.setupCanvas();
     this.createPipContainer();
-    this.connectToBackend();
+    this.startPolling();
   }
 
   private setupCanvas() {
@@ -90,51 +91,49 @@ class QuantumSynth {
     }
   }
 
-  private connectToBackend() {
+  private async startPolling() {
+    // Start polling for new shaders
+    this.pollingInterval = window.setInterval(() => {
+      this.fetchNewShader();
+    }, 5000) as unknown as number;
+    
+    // Fetch initial shader
+    this.fetchNewShader();
+  }
+
+  private async fetchNewShader() {
     try {
-      this.ws = new WebSocket('wss://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/ws');
-      
-      this.ws.onopen = () => {
-        console.log('Connected to visualization server');
-        this.requestNewShader();
-      };
-      
-      this.ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          if (data.type === 'shader') {
-            this.nextShader = data.code;
-            this.startTransition();
-          } else if (data.type === 'visualization') {
-            this.visualizationElement.textContent = data.name;
-          }
-        } catch (error) {
-          console.error('Error parsing shader data:', error);
-        }
-      };
-      
-      this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
-      
-      this.ws.onclose = () => {
-        console.log('Disconnected from visualization server');
-      };
+      const response = await fetch('https://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/api/shader/next');
+      if (response.ok) {
+        const data = await response.json();
+        this.nextShader = data.code;
+        this.currentVizName = data.name;
+        this.startTransition();
+      }
     } catch (error) {
-      console.error('Failed to connect to backend:', error);
+      console.error('Failed to fetch shader:', error);
+      // Fallback to local generation
+      this.generateLocalShader();
     }
   }
 
-  private requestNewShader() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'request_shader' }));
-    }
+  private generateLocalShader() {
+    // Fallback local shader generator
+    const types = ['quantum', 'neural', 'temporal'];
+    const names = ['Quantum Waves', 'Neural Particles', 'Temporal Fields'];
+    const randomIndex = Math.floor(Math.random() * types.length);
+    
+    this.nextShader = types[randomIndex];
+    this.currentVizName = names[randomIndex];
+    this.startTransition();
   }
 
   private startTransition() {
+    if (this.isTransitioning) return;
+    
     this.isTransitioning = true;
     this.transitionProgress = 0;
+    this.visualizationElement.textContent = `Transitioning to: ${this.currentVizName}`;
     
     // Complete transition after 3 seconds
     const transitionDuration = 3000;
@@ -148,7 +147,7 @@ class QuantumSynth {
         this.transitionProgress = 1;
         this.currentShader = this.nextShader;
         this.isTransitioning = false;
-        this.requestNewShader();
+        this.visualizationElement.textContent = this.currentVizName;
       } else {
         requestAnimationFrame(animateTransition);
       }
@@ -327,11 +326,11 @@ class QuantumSynth {
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
     }
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+    }
     if (this.audioContext) {
       this.audioContext.close();
-    }
-    if (this.ws) {
-      this.ws.close();
     }
   }
 }
@@ -433,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
       
       <div class="quantum-footer">
-        <p>QuantumSynth Infinite v2.1.0 - Endless AI Generation</p>
+        <p>QuantumSynth Infinite v2.2.0 - Endless AI Generation</p>
         <p class="github-attribution">Built by <a href="https://github.com/simon-hirst" target="_blank" rel="noopener">simon-hirst</a></p>
       </div>
     </div>

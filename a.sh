@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Add PiP functionality and backend-driven visualizations
+# Switch from WebSockets to HTTP polling for better Azure compatibility
 cat > frontend/src/main.ts << 'EOF'
 import './style.css'
 
@@ -13,13 +13,14 @@ class QuantumSynth {
   private animationFrame: number | null = null;
   private visualizationElement: HTMLElement;
   private lastUpdate: number = 0;
-  private ws: WebSocket | null = null;
   private currentShader: string = '';
   private nextShader: string = '';
   private transitionProgress: number = 0;
   private isTransitioning: boolean = false;
   private pipContainer: HTMLDivElement | null = null;
   private isPipMode: boolean = false;
+  private pollingInterval: number | null = null;
+  private currentVizName: string = 'Connecting to AI...';
 
   constructor(canvas: HTMLCanvasElement, visualizationElement: HTMLElement) {
     this.canvas = canvas;
@@ -27,7 +28,7 @@ class QuantumSynth {
     this.visualizationElement = visualizationElement;
     this.setupCanvas();
     this.createPipContainer();
-    this.connectToBackend();
+    this.startPolling();
   }
 
   private setupCanvas() {
@@ -94,51 +95,49 @@ class QuantumSynth {
     }
   }
 
-  private connectToBackend() {
+  private async startPolling() {
+    // Start polling for new shaders
+    this.pollingInterval = window.setInterval(() => {
+      this.fetchNewShader();
+    }, 5000) as unknown as number;
+    
+    // Fetch initial shader
+    this.fetchNewShader();
+  }
+
+  private async fetchNewShader() {
     try {
-      this.ws = new WebSocket('wss://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/ws');
-      
-      this.ws.onopen = () => {
-        console.log('Connected to visualization server');
-        this.requestNewShader();
-      };
-      
-      this.ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          if (data.type === 'shader') {
-            this.nextShader = data.code;
-            this.startTransition();
-          } else if (data.type === 'visualization') {
-            this.visualizationElement.textContent = data.name;
-          }
-        } catch (error) {
-          console.error('Error parsing shader data:', error);
-        }
-      };
-      
-      this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
-      
-      this.ws.onclose = () => {
-        console.log('Disconnected from visualization server');
-      };
+      const response = await fetch('https://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/api/shader/next');
+      if (response.ok) {
+        const data = await response.json();
+        this.nextShader = data.code;
+        this.currentVizName = data.name;
+        this.startTransition();
+      }
     } catch (error) {
-      console.error('Failed to connect to backend:', error);
+      console.error('Failed to fetch shader:', error);
+      // Fallback to local generation
+      this.generateLocalShader();
     }
   }
 
-  private requestNewShader() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'request_shader' }));
-    }
+  private generateLocalShader() {
+    // Fallback local shader generator
+    const types = ['quantum', 'neural', 'temporal'];
+    const names = ['Quantum Waves', 'Neural Particles', 'Temporal Fields'];
+    const randomIndex = Math.floor(Math.random() * types.length);
+    
+    this.nextShader = types[randomIndex];
+    this.currentVizName = names[randomIndex];
+    this.startTransition();
   }
 
   private startTransition() {
+    if (this.isTransitioning) return;
+    
     this.isTransitioning = true;
     this.transitionProgress = 0;
+    this.visualizationElement.textContent = `Transitioning to: ${this.currentVizName}`;
     
     // Complete transition after 3 seconds
     const transitionDuration = 3000;
@@ -152,7 +151,7 @@ class QuantumSynth {
         this.transitionProgress = 1;
         this.currentShader = this.nextShader;
         this.isTransitioning = false;
-        this.requestNewShader();
+        this.visualizationElement.textContent = this.currentVizName;
       } else {
         requestAnimationFrame(animateTransition);
       }
@@ -331,11 +330,11 @@ class QuantumSynth {
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
     }
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+    }
     if (this.audioContext) {
       this.audioContext.close();
-    }
-    if (this.ws) {
-      this.ws.close();
     }
   }
 }
@@ -437,7 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
       
       <div class="quantum-footer">
-        <p>QuantumSynth Infinite v2.1.0 - Endless AI Generation</p>
+        <p>QuantumSynth Infinite v2.2.0 - Endless AI Generation</p>
         <p class="github-attribution">Built by <a href="https://github.com/simon-hirst" target="_blank" rel="noopener">simon-hirst</a></p>
       </div>
     </div>
@@ -519,413 +518,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 EOF
 
-# Add PiP styles
-cat > frontend/src/style.css << 'EOF'
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-:root {
-  --primary: #6e44ff;
-  --primary-dark: #5a36d6;
-  --secondary: #0ea5e9;
-  --accent: #10b981;
-  --warning: #f59e0b;
-  --error: #ef4444;
-  --dark: #0f172a;
-  --darker: #020617;
-  --light: #f1f5f9;
-  --card-bg: rgba(15, 23, 42, 0.7);
-  --card-border: rgba(148, 163, 184, 0.1);
-  --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-}
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  background: linear-gradient(135deg, var(--darker) 0%, var(--dark) 100%);
-  color: var(--text-primary);
-  font-family: 'Inter', sans-serif;
-  min-height: 100vh;
-  overflow-x: hidden;
-  line-height: 1.6;
-}
-
-.quantum-container {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 2rem;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.quantum-header {
-  text-align: center;
-  margin-bottom: 3rem;
-  padding: 2rem 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-}
-
-.quantum-title {
-  font-size: 2.5rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  margin-bottom: 0.5rem;
-  letter-spacing: -0.5px;
-}
-
-.quantum-subtitle {
-  font-size: 1.1rem;
-  color: var(--text-secondary);
-  font-weight: 400;
-}
-
-.quantum-content {
-  display: grid;
-  grid-template-columns: 1fr 1.5fr;
-  gap: 2rem;
-  flex: 1;
-}
-
-.quantum-card {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 12px;
-  padding: 1.5rem;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-}
-
-.card-header {
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-}
-
-.card-header h2 {
-  font-size: 1.3rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.instruction-step {
-  display: flex;
-  align-items: flex-start;
-  margin-bottom: 1.5rem;
-}
-
-.step-number {
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: white;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 0.9rem;
-  margin-right: 1rem;
-  flex-shrink: 0;
-}
-
-.step-content h3 {
-  font-size: 1rem;
-  margin-bottom: 0.3rem;
-  color: var(--text-primary);
-  font-weight: 500;
-}
-
-.step-content p {
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-}
-
-.drm-warning {
-  display: flex;
-  align-items: flex-start;
-  margin: 1.5rem 0;
-  padding: 1rem;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: 8px;
-}
-
-.warning-icon {
-  font-size: 1.5rem;
-  margin-right: 1rem;
-  flex-shrink: 0;
-}
-
-.warning-content h3 {
-  font-size: 1rem;
-  margin-bottom: 0.3rem;
-  color: var(--warning);
-  font-weight: 600;
-}
-
-.warning-content p {
-  color: rgba(245, 158, 11, 0.9);
-  font-size: 0.9rem;
-}
-
-.quantum-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 0.875rem 1.5rem;
-  border: none;
-  border-radius: 8px;
-  font-family: 'Inter', sans-serif;
-  font-size: 1rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  margin-top: 1.5rem;
-}
-
-.quantum-btn.primary {
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: white;
-  box-shadow: 0 4px 12px rgba(110, 68, 255, 0.3);
-}
-
-.quantum-btn.primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(110, 68, 255, 0.4);
-}
-
-.quantum-btn.secondary {
-  background: rgba(148, 163, 184, 0.1);
-  color: var(--text-primary);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-}
-
-.quantum-btn.secondary:hover {
-  background: rgba(148, 163, 184, 0.15);
-}
-
-.btn-icon {
-  margin-right: 0.5rem;
-  font-size: 1.1rem;
-}
-
-.visualization-container {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 12px;
-  padding: 1.5rem;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  display: flex;
-  flex-direction: column;
-}
-
-.viz-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.viz-header h3 {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.viz-mode {
-  display: flex;
-  align-items: center;
-  margin-bottom: 1rem;
-  padding: 0.5rem;
-  background: rgba(15, 23, 42, 0.5);
-  border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.1);
-}
-
-.mode-label {
-  font-weight: 500;
-  margin-right: 0.5rem;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-}
-
-#currentVisualization {
-  color: var(--primary);
-  font-weight: 500;
-  font-size: 0.9rem;
-}
-
-.status-indicator {
-  display: flex;
-  align-items: center;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 0.5rem;
-  background: #475569;
-}
-
-.status-dot.pending {
-  background: var(--warning);
-  box-shadow: 0 0 6px var(--warning);
-  animation: pulse 1.5s infinite;
-}
-
-.status-dot.active {
-  background: var(--accent);
-  box-shadow: 0 0 6px var(--accent);
-}
-
-.status-text {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
-#visualizer {
-  width: 100%;
-  height: 400px;
-  border-radius: 8px;
-  background: rgba(2, 6, 23, 0.3);
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  margin-bottom: 1rem;
-}
-
-.viz-footer {
-  margin-top: auto;
-}
-
-.viz-footer p {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  text-align: center;
-}
-
-.quantum-footer {
-  margin-top: 3rem;
-  padding-top: 2rem;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
-  text-align: center;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-}
-
-.github-attribution {
-  margin-top: 0.5rem;
-}
-
-.github-attribution a {
-  color: var(--primary);
-  text-decoration: none;
-  transition: all 0.2s ease;
-}
-
-.github-attribution a:hover {
-  color: var(--secondary);
-}
-
-/* Picture-in-Picture styles */
-.pip-container {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 500px;
-  height: 400px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 12px;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-  z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.pip-container.hidden {
-  display: none;
-}
-
-.pip-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  background: rgba(15, 23, 42, 0.8);
-  border-bottom: 1px solid var(--card-border);
-}
-
-.pip-header span {
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.pip-controls {
-  display: flex;
-}
-
-.pip-btn {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 0.25rem;
-  font-size: 1rem;
-  border-radius: 4px;
-}
-
-.pip-btn:hover {
-  background: rgba(148, 163, 184, 0.1);
-}
-
-.pip-content {
-  flex: 1;
-  padding: 1rem;
-}
-
-#pipCanvas {
-  width: 100%;
-  height: 100%;
-  border-radius: 8px;
-  background: rgba(2, 6, 23, 0.3);
-}
-
-@keyframes pulse {
-  0% { opacity: 0.7; }
-  50% { opacity: 1; }
-  100% { opacity: 0.7; }
-}
-
-@media (max-width: 968px) {
-  .quantum-content {
-    grid-template-columns: 1fr;
-  }
-  
-  .quantum-title {
-    font-size: 2rem;
-  }
-
-  .pip-container {
-    width: 90%;
-    height: 300px;
-  }
-}
-EOF
-
-# Update backend to generate GLSL shaders
+# Update backend to handle HTTP requests properly
 cat > main.go << 'EOF'
 package main
 
@@ -936,12 +529,10 @@ import (
 	"math/rand"
 	"net/http"
 	"time"
-	"sync"
 	"strings"
 	
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"github.com/gorilla/websocket"
 )
 
 type ShaderParams struct {
@@ -951,14 +542,6 @@ type ShaderParams struct {
 }
 
 var (
-	clients   = make(map[*websocket.Conn]bool)
-	clientsMu sync.Mutex
-	upgrader  = websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-	}
-	
 	shaderTemplates = []string{
 		`
 		void main() {
@@ -1045,9 +628,6 @@ func main() {
 	router.HandleFunc("/api/shader/current", getCurrentShader).Methods("GET")
 	router.HandleFunc("/api/health", healthCheck).Methods("GET")
 	
-	// WebSocket endpoint for real-time updates
-	router.HandleFunc("/ws", handleWebSocket)
-	
 	// Serve frontend
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./frontend/dist/")))
 	
@@ -1055,54 +635,18 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", handlers.CORS(headers, methods, origins)(router)))
 }
 
-func handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("WebSocket upgrade failed: %v", err)
-		return
-	}
-	defer conn.Close()
-	
-	clientsMu.Lock()
-	clients[conn] = true
-	clientsMu.Unlock()
-	
-	log.Printf("Client connected: %s", conn.RemoteAddr())
-	
-	// Send initial shader
+func getNextShader(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	shader := generateRandomShader()
-	if err := conn.WriteJSON(shader); err != nil {
-		log.Printf("WebSocket write failed: %v", err)
-		return
-	}
-	
-	for {
-		// Read message from client
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			break
-		}
-		
-		var msg map[string]interface{}
-		if err := json.Unmarshal(message, &msg); err != nil {
-			continue
-		}
-		
-		if msg["type"] == "request_shader" {
-			// Send new shader
-			shader := generateRandomShader()
-			if err := conn.WriteJSON(shader); err != nil {
-				log.Printf("WebSocket write failed: %v", err)
-				break
-			}
-		}
-	}
-	
-	clientsMu.Lock()
-	delete(clients, conn)
-	clientsMu.Unlock()
-	
-	log.Printf("Client disconnected: %s", conn.RemoteAddr())
+	json.NewEncoder(w).Encode(shader)
+}
+
+func getCurrentShader(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	shader := generateRandomShader()
+	json.NewEncoder(w).Encode(shader)
 }
 
 func generateRandomShader() ShaderParams {
@@ -1147,41 +691,21 @@ func modifyShader(shader string) string {
 	return shader
 }
 
-func getNextShader(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	shader := generateRandomShader()
-	json.NewEncoder(w).Encode(shader)
-}
-
-func getCurrentShader(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	shader := generateRandomShader()
-	json.NewEncoder(w).Encode(shader)
-}
-
 func healthCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"timestamp": time.Now(),
-		"clients":   len(clients),
 	})
 }
 
 var (
 	headers = handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
-	methods = handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE"})
+	methods = handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"})
 	origins = handlers.AllowedOrigins([]string{"*"})
 )
 EOF
-
-# Fix backend dependencies
-rm -f go.mod go.sum
-go mod init ai-processor
-go get github.com/gorilla/mux
-go get github.com/gorilla/handlers
-go get github.com/gorilla/websocket
-go mod download
 
 # Build and deploy
 echo "📦 Building backend..."
@@ -1240,8 +764,8 @@ console.log(newDate.toISOString().replace('T', ' ').substring(0, 19));
 
 # Commit changes
 git add .
-GIT_COMMITTER_DATE="$NEW_DATE" git commit --date="$NEW_DATE" -m "feat: add PiP mode and backend-generated GLSL shaders"
-echo "✅ Added Picture-in-Picture mode and backend-generated GLSL shaders!"
+GIT_COMMITTER_DATE="$NEW_DATE" git commit --date="$NEW_DATE" -m "fix: replace WebSockets with HTTP polling for Azure compatibility"
+echo "✅ Replaced WebSockets with HTTP polling for better Azure compatibility!"
 echo "📅 Commit date: $NEW_DATE"
-echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the new features"
-echo "🚀 Backend now generates and streams GLSL shaders for infinite visualizations"
+echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the updates"
+echo "🚀 Backend now uses HTTP endpoints for better compatibility with Azure Container Apps"
