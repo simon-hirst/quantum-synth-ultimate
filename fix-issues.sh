@@ -1,4 +1,3 @@
-cat > ~/Desktop/hehehehe/quantum-synth-ultimate/fix-issues.sh << 'EOF'
 #!/bin/bash
 
 # Fix frontend rendering and backend connection issues
@@ -173,4 +172,3 @@ GIT_COMMITTER_DATE="$new_date" git commit --date="$new_date" -m "fix: canvas ren
 echo "✅ Fixed canvas rendering and backend connection issues!"
 echo "📅 Commit date: $new_date"
 echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the updates"
-EOF
