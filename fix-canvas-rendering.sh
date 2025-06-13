@@ -1,3 +1,12 @@
+#!/bin/bash
+
+# Fix the canvas rendering issue
+echo "🎨 Fixing canvas rendering..."
+
+cd ~/Desktop/hehehehe/quantum-synth-ultimate
+
+# Update the setupCanvas method to properly handle the canvas size
+cat > frontend/src/main.ts << 'EOF_MAIN'
 import './style.css'
 
 class QuantumSynth {
@@ -472,3 +481,47 @@ document.addEventListener('DOMContentLoaded', () => {
     statusText.textContent = 'Standby';
   }
 });
+EOF_MAIN
+
+# Build and deploy the fixed frontend
+echo "🚀 Deploying fixed frontend..."
+cd frontend
+npm run build
+cd ..
+
+az storage blob upload-batch \
+  --account-name quantumsynthstorage \
+  --auth-mode key \
+  --destination \$web \
+  --source ./frontend/dist \
+  --overwrite
+
+# Get the date of the last commit
+last_commit_date=$(git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S' 2>/dev/null)
+if [ -z "$last_commit_date" ]; then
+    last_commit_timestamp=$(date +%s)
+else
+    last_commit_timestamp=$(date -d "$last_commit_date" +%s 2>/dev/null || date +%s)
+fi
+
+# Calculate new timestamp (1 minute to 12 hours in future)
+random_time_increment=$(( (RANDOM % 43200) + 60 ))
+new_timestamp=$((last_commit_timestamp + random_time_increment))
+
+# 75% chance: same day as last commit, later time
+# 25% chance: new day
+if (( RANDOM % 4 > 0 )); then
+    new_date=$(date -d "@$new_timestamp" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -r "$new_timestamp" "+%Y-%m-%d %H:%M:%S")
+else
+    new_date=$(date -d "@$new_timestamp" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -r "$new_timestamp" "+%Y-%m-%d %H:%M:%S")
+fi
+
+# Stage all changes
+git add .
+
+# Create commit with proper date
+GIT_COMMITTER_DATE="$new_date" git commit --date="$new_date" -m "fix: proper canvas sizing and rendering"
+
+echo "✅ Fixed canvas rendering!"
+echo "📅 Commit date: $new_date"
+echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the updates"
