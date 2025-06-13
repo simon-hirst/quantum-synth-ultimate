@@ -1,4 +1,3 @@
-cat > ~/Desktop/hehehehe/quantum-synth-ultimate/fix-all-issues.sh << 'EOF'
 #!/bin/bash
 
 # Fix frontend rendering and backend connection issues
@@ -541,4 +540,3 @@ echo "✅ Fixed all issues!"
 echo "📅 Commit date: $new_date"
 echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the updates"
 echo "🌐 Backend status: $BACKEND_URL/api/health"
-EOF
