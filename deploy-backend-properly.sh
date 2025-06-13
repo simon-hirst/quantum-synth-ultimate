@@ -1,4 +1,3 @@
-cat > ~/Desktop/hehehehe/quantum-synth-ultimate/deploy-backend-properly.sh << 'EOF'
 #!/bin/bash
 
 # Proper backend deployment script
@@ -213,4 +212,3 @@ echo "✅ Backend deployed properly!"
 echo "📅 Commit date: $new_date"
 echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the updates"
 echo "🌐 Backend URL: https://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/api/health"
-EOF
