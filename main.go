@@ -110,7 +110,7 @@ func generateRandomShader() ShaderParams {
 		"Temporal Waveforms",
 		"Fractal Dimensions",
 		"Harmonic Oscillations",
-		"Resonance Fields",
+                "Resonance Fields",
 	}
 	
 	randomIndex := rand.Intn(len(shaderTypes))

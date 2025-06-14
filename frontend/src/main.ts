@@ -1,54 +1,50 @@
 import './style.css'
 
 class QuantumSynth {
-  // ... (existing QuantumSynth class code remains the same until the fetchNewShader method)
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  // ... (rest of the class implementation)
 
-  private async fetchNewShader() {
-    const endpoints = [
-      'https://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/api/shader/next',
-      'http://localhost:8080/api/shader/next'
-    ];
-
-    for (const endpoint of endpoints) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); // Shorter timeout
-        
-        const response = await fetch(endpoint, {
-          signal: controller.signal,
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (response.ok) {
-          const data = await response.json();
-          this.nextVizType = data.type || 'quantum';
-          this.currentVizName = data.name || 'Quantum Resonance';
-          this.statusDot.classList.remove('pending');
-          this.statusDot.classList.add('active');
-          this.statusElement.textContent = 'Active';
-          this.startTransition();
-          console.log(`Connected to backend via ${endpoint}`);
-          return;
-        }
-      } catch (error) {
-        console.warn(`Failed to connect to ${endpoint}:`, error);
-        continue;
-      }
-    }
-    
-    // If all endpoints fail, use local generation
-    console.error('All backend connections failed, using local fallback');
-    this.statusDot.classList.remove('active');
-    this.statusDot.classList.add('pending');
-    this.statusElement.textContent = 'Local Mode';
-    this.generateLocalShader();
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not get canvas context');
+    this.ctx = ctx;
+    this.setupCanvas();
+    this.startPolling();
   }
 
-  // ... (rest of the class remains the same)
+  private setupCanvas() {
+    const container = this.canvas.parentElement;
+    if (!container) return;
+    
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    
+    this.canvas.width = width;
+    this.canvas.height = height;
+    this.canvas.style.width = `${width}px`;
+    this.canvas.style.height = `${height}px`;
+  }
+
+  // ... (rest of the class implementation)
 }
 
-// ... (rest of the file remains the same)
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('Initializing QuantumSynth...');
+  
+  const app = document.querySelector<HTMLDivElement>('#app');
+  if (!app) return;
+
+  app.innerHTML = `
+    <div class="quantum-container">
+      <!-- Your UI structure here -->
+      <canvas id="visualizer"></canvas>
+    </div>
+  `;
+
+  const canvas = document.getElementById('visualizer') as HTMLCanvasElement;
+  if (!canvas) return;
+
+  new QuantumSynth(canvas);
+});
