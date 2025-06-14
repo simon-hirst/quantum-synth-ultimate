@@ -149,15 +149,28 @@ export class QuantumSynth {
         }
     }
 
+    
     private resizeCanvas() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
-        console.log('Canvas resized to:', this.canvas.width, 'x', this.canvas.height);
-        
+        const container = this.canvas.parentElement ?? document.body;
+        const rect = container.getBoundingClientRect();
+
+        const cssWidth  = Math.max(1, Math.floor(rect.width));
+        const cssHeight = Math.max(1, Math.floor((rect.height || 0) || 400));
+        const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+
+        // CSS size (CSS pixels)
+        this.canvas.style.width  = `${cssWidth}px`;
+        this.canvas.style.height = `${cssHeight}px`;
+
+        // Backing store size (device pixels)
+        this.canvas.width  = cssWidth * dpr;
+        this.canvas.height = cssHeight * dpr;
+
         if (this.gl) {
             this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
         }
     }
+}
 
     private setup2DFallback() {
         console.log('Setting up 2D fallback renderer');
