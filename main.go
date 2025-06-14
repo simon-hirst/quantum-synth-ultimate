@@ -14,13 +14,12 @@ import (
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 )
 
 //go:embed frontend/dist/* frontend/dist/**/*
-// Note: if dist isn't present at build time, static serving will just fall back to disk path.
 var distFS embed.FS
 
-// ShaderParams represents the parameters for a shader
 type ShaderParams struct {
 	Type       string `json:"type"`
 	Name       string `json:"name"`
@@ -31,15 +30,15 @@ type ShaderParams struct {
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	// Config
 	port := getenvDefault("PORT", "8080")
 	staticDir := getenvDefault("STATIC_DIR", "./frontend/dist")
-	version := getenvDefault("APP_VERSION", "2.2.2")
-	allowedOrigins := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS")) // comma-separated or "*" or empty
+	version := getenvDefault("APP_VERSION", "2.2.3")
+	allowedOriginsEnv := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS")) // "*" or CSV list
 
+	// Router
 	router := mux.NewRouter()
 
-	// API endpoints
+	// API
 	router.HandleFunc("/api/shader/next", getNextShader).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/shader/current", getCurrentShader).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -50,30 +49,50 @@ func main() {
 		})
 	}).Methods("GET", "OPTIONS")
 
-	// Static files / SPA fallback
+	// WebSocket
+	upgrader := websocket.Upgrader{
+		// CORS-like origin check for WS
+		CheckOrigin: func(r *http.Request) bool {
+			if allowedOriginsEnv == "" || allowedOriginsEnv == "*" {
+				return true
+			}
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true
+			}
+			for _, o := range strings.Split(allowedOriginsEnv, ",") {
+				o = strings.TrimSpace(o)
+				if strings.EqualFold(o, origin) {
+					return true
+				}
+			}
+			return false
+		},
+	}
+	router.HandleFunc("/ws", wsHandler(upgrader)).Methods("GET")
+
+	// Static / SPA
 	router.PathPrefix("/").Handler(spaHandler(staticDir, "index.html"))
 
-	// CORS setup
+	// CORS for HTTP endpoints
 	corsOpts := []handlers.CORSOption{
 		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
 		handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-Requested-With"}),
 	}
-	if allowedOrigins == "" {
+	if allowedOriginsEnv == "" {
 		corsOpts = append(corsOpts, handlers.AllowedOrigins([]string{"*"}))
 	} else {
-		parts := strings.Split(allowedOrigins, ",")
+		parts := strings.Split(allowedOriginsEnv, ",")
 		for i := range parts {
 			parts[i] = strings.TrimSpace(parts[i])
 		}
 		corsOpts = append(corsOpts, handlers.AllowedOrigins(parts))
-		// Only allow credentials if NOT wildcard
 		if !(len(parts) == 1 && parts[0] == "*") {
 			corsOpts = append(corsOpts, handlers.AllowCredentials())
 		}
 	}
 	corsMiddleware := handlers.CORS(corsOpts...)
 
-	// HTTP server with sane timeouts
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           corsMiddleware(loggingMiddleware(router)),
@@ -89,7 +108,80 @@ func main() {
 	}
 }
 
-// ---------- Handlers ----------
+func wsHandler(upgrader websocket.Upgrader) http.HandlerFunc {
+	type hello struct {
+		Type       string `json:"type"`
+		Message    string `json:"message"`
+		ServerTime string `json:"serverTime"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		c, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			log.Printf("ws upgrade error: %v", err)
+			return
+		}
+		defer c.Close()
+
+		// Basic ping/pong & read deadlines
+		c.SetReadLimit(1 << 20)
+		_ = c.SetReadDeadline(time.Now().Add(60 * time.Second))
+		c.SetPongHandler(func(appData string) error {
+			_ = c.SetReadDeadline(time.Now().Add(60 * time.Second))
+			return nil
+		})
+
+		// Initial hello
+		_ = c.WriteJSON(hello{
+			Type:       "hello",
+			Message:    "connected",
+			ServerTime: time.Now().Format(time.RFC3339),
+		})
+
+		// Ping ticker
+		ping := time.NewTicker(25 * time.Second)
+		defer ping.Stop()
+
+		// Reader loop
+		errCh := make(chan error, 1)
+		go func() {
+			for {
+				mt, msg, err := c.ReadMessage()
+				if err != nil {
+					errCh <- err
+					return
+				}
+				if mt == websocket.CloseMessage {
+					errCh <- nil
+					return
+				}
+				// Echo with server time
+				resp := map[string]any{
+					"type":       "echo",
+					"serverTime": time.Now().Format(time.RFC3339),
+					"message":    string(msg),
+				}
+				if e := c.WriteJSON(resp); e != nil {
+					errCh <- e
+					return
+				}
+			}
+		}()
+
+		for {
+			select {
+			case <-ping.C:
+				_ = c.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second))
+			case err := <-errCh:
+				if err != nil {
+					log.Printf("ws read loop ended: %v", err)
+				}
+				return
+			}
+		}
+	}
+}
+
+// ---------- HTTP handlers ----------
 
 func getNextShader(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, generateRandomShader())
@@ -99,12 +191,10 @@ func getCurrentShader(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, generateRandomShader())
 }
 
-// ----------- Helpers -----------
+// ---------- helpers ----------
 
 func respondJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	// Cache rules here if needed:
-	// w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }
@@ -124,10 +214,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// spaHandler serves static files from disk if present; otherwise falls back to embedded distFS.
-// Any non-existent path falls back to index.html (for SPA routes).
 func spaHandler(staticDir, index string) http.Handler {
-	// Prefer disk (live dev), else embedded FS (if embedded at build time).
 	tryDisk := func(p string) (http.File, error) {
 		f, err := os.Open(filepath.Join(staticDir, p))
 		if err == nil {
@@ -140,31 +227,27 @@ func spaHandler(staticDir, index string) http.Handler {
 		if path == "" {
 			path = index
 		}
-		// Try disk first
 		if f, err := tryDisk(path); err == nil {
 			_ = f.Close()
 			http.ServeFile(w, r, filepath.Join(staticDir, path))
 			return
 		}
-		// Try embedded
 		if f, err := distFS.Open("frontend/dist/" + path); err == nil {
 			_ = f.Close()
 			http.FileServer(http.FS(distFS)).ServeHTTP(w, r)
 			return
 		}
-		// Fallback to index.html
-		// Disk first
 		if f, err := tryDisk(index); err == nil {
 			_ = f.Close()
 			http.ServeFile(w, r, filepath.Join(staticDir, index))
 			return
 		}
-		// Embedded fallback
+		// Last resort: try embedded index
 		http.ServeFileFS(w, r, distFS, "frontend/dist/"+index)
 	})
 }
 
-// ---- Shader generation (current JSON contract) ----
+// ---- Shader generation ----
 
 func generateRandomShader() ShaderParams {
 	shaderTypes := []string{"quantum", "neural", "temporal", "fractal", "harmonic", "resonance"}
