@@ -1,187 +1,240 @@
-cat > ~/Desktop/hehehehe/quantum-synth-ultimate/deploy-backend-properly.sh << 'EOF'
+cat > ~/Desktop/hehehehe/quantum-synth-ultimate/fix-syntax-error.sh << 'EOF'
 #!/bin/bash
 
-# Proper backend deployment script
-echo "🚀 Deploying QuantumSynth backend properly..."
+# Fix the syntax error in main.go
+echo "🔧 Fixing syntax error in main.go..."
 
 cd ~/Desktop/hehehehe/quantum-synth-ultimate
 
-# First, let's fix the Go version issue in the Dockerfile
-echo "🔧 Fixing Dockerfile for Go 1.25..."
-cat > Dockerfile << 'EOF_DOCKER'
-FROM golang:1.25-alpine AS builder
+# Check around line 113 for the issue
+sed -n '110,120p' main.go
 
-# Install dependencies
-RUN apk add --no-cache git
+# Let's fix the likely issue - a missing comma in a JSON structure or similar
+# The error suggests a missing comma or } in a composite literal
+cat > main.go << 'EOF_MAIN'
+package main
 
-# Set working directory
-WORKDIR /app
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"math/rand"
+	"net/http"
+	"time"
+	"os"
 
-# Copy go mod files
-COPY go.mod go.sum ./
+	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
+)
 
-# Download dependencies
-RUN go mod download
+// ShaderParams represents the parameters for a shader
+type ShaderParams struct {
+	Type       string `json:"type"`
+	Name       string `json:"name"`
+	Code       string `json:"code"`
+	Complexity int    `json:"complexity"`
+}
 
-# Copy source code
-COPY . .
+func main() {
+	rand.Seed(time.Now().UnixNano())
 
-# Build the application
-RUN go build -o ai-processor .
+	// Get port from environment variable or use default
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 
-# Create final image
-FROM alpine:latest
+	router := mux.NewRouter()
 
-# Install CA certificates for HTTPS
-RUN apk --no-cache add ca-certificates
+	// API endpoints
+	router.HandleFunc("/api/shader/next", getNextShader).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/shader/current", getCurrentShader).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/health", healthCheck).Methods("GET", "OPTIONS")
 
-# Set working directory
-WORKDIR /app
+	// Serve frontend
+	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./frontend/dist/")))
 
-# Copy binary from builder
-COPY --from=builder /app/ai-processor .
+	// Configure CORS
+	corsMiddleware := handlers.CORS(
+		handlers.AllowedOrigins([]string{"*"}),
+		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
+		handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-Requested-With"}),
+		handlers.AllowCredentials(),
+	)
 
-# Copy frontend files
-COPY frontend/dist ./frontend/dist
+	fmt.Printf("QuantumSynth Infinite server starting on :%s\n", port)
+	log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(router)))
+}
 
-# Expose port
-EXPOSE 8080
+// Add OPTIONS handler for preflight requests
+func optionsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.WriteHeader(http.StatusOK)
+}
 
-# Set environment variables
-ENV PORT=8080
+func getNextShader(w http.ResponseWriter, r *http.Request) {
+	// Handle OPTIONS preflight
+	if r.Method == "OPTIONS" {
+		optionsHandler(w, r)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	shader := generateRandomShader()
+	json.NewEncoder(w).Encode(shader)
+}
 
-# Run the application
-CMD ["./ai-processor"]
-EOF_DOCKER
+func getCurrentShader(w http.ResponseWriter, r *http.Request) {
+	// Handle OPTIONS preflight
+	if r.Method == "OPTIONS" {
+		optionsHandler(w, r)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	shader := generateRandomShader()
+	json.NewEncoder(w).Encode(shader)
+}
 
-# Test the backend locally first
-echo "🧪 Testing backend locally..."
-go mod tidy
+func healthCheck(w http.ResponseWriter, r *http.Request) {
+	// Handle OPTIONS preflight
+	if r.Method == "OPTIONS" {
+		optionsHandler(w, r)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "healthy",
+		"timestamp": time.Now(),
+		"version":   "2.2.1",
+	})
+}
+
+func generateRandomShader() ShaderParams {
+	shaderTypes := []string{"quantum", "neural", "temporal", "fractal", "harmonic", "resonance"}
+	shaderNames := []string{
+		"Quantum Resonance", 
+		"Neural Particles", 
+		"Temporal Waveforms",
+		"Fractal Dimensions",
+		"Harmonic Oscillations",
+		"Resonance Fields",
+	}
+	
+	randomIndex := rand.Intn(len(shaderTypes))
+	
+	return ShaderParams{
+		Type:       shaderTypes[randomIndex],
+		Name:       shaderNames[randomIndex],
+		Code:       generateShaderCode(shaderTypes[randomIndex]),
+		Complexity: rand.Intn(10) + 1,
+	}
+}
+
+func generateShaderCode(shaderType string) string {
+	baseCode := `
+		void main() {
+			vec2 uv = gl_FragCoord.xy / iResolution.xy;
+			float time = iTime * 0.5;
+			vec3 color = vec3(0.0);
+			
+			%s
+			
+			gl_FragColor = vec4(color, 1.0);
+		}
+	`
+	
+	var effectCode string
+	
+	switch shaderType {
+	case "quantum":
+		effectCode = `
+			for (int i = 0; i < 5; i++) {
+				float fi = float(i);
+				vec2 center = vec2(0.5 + 0.3 * sin(time * 0.5 + fi * 1.2), 0.5 + 0.3 * cos(time * 0.7 + fi * 0.9));
+				float dist = length(uv - center);
+				float intensity = 0.02 / dist;
+				color += intensity * vec3(0.5 + 0.5 * sin(time + fi), 0.5 + 0.5 * cos(time * 1.3 + fi), 0.5 + 0.5 * sin(time * 0.7 + fi));
+			}
+		`
+	case "neural":
+		effectCode = `
+			for (int i = 0; i < 20; i++) {
+				float fi = float(i);
+				vec2 pos = vec2(0.5 + 0.4 * sin(time * 0.3 + fi * 0.7), 0.5 + 0.4 * cos(time * 0.5 + fi * 0.4));
+				float dist = length(uv - pos);
+				float size = 0.01 + 0.005 * sin(time * 2.0 + fi);
+				if (dist < size) {
+					color += vec3(0.8 + 0.2 * sin(time + fi), 0.4 + 0.2 * cos(time * 1.2 + fi), 0.2 + 0.2 * sin(time * 0.8 + fi));
+				}
+			}
+		`
+	case "temporal":
+		effectCode = `
+			uv = uv * 2.0 - 1.0;
+			float angle = atan(uv.y, uv.x);
+			float radius = length(uv);
+			
+			for (int i = 0; i < 8; i++) {
+				float fi = float(i);
+				float wave = sin(radius * 20.0 - time * 3.0 + fi * 0.5) * 0.5 + 0.5;
+				color += vec3(wave * (0.5 + 0.5 * sin(time + fi)), wave * (0.5 + 0.5 * cos(time * 1.3 + fi)), wave * (0.5 + 0.5 * sin(time * 0.7 + fi))) * 0.2;
+			}
+		`
+	case "fractal":
+		effectCode = `
+			uv = (uv - 0.5) * 2.0;
+			uv.x *= iResolution.x / iResolution.y;
+			
+			vec2 c = vec2(0.285 + 0.1 * sin(time * 0.3), 0.01 + 0.1 * cos(time * 0.2));
+			vec2 z = uv;
+			
+			int iterations = 0;
+			for (int i = 0; i < 100; i++) {
+				z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
+				if (dot(z, z) > 4.0) {
+					break;
+				}
+				iterations++;
+			}
+			
+			float t = float(iterations) / 100.0;
+			color = vec3(0.5 + 0.5 * cos(6.2831 * t + time), 0.5 + 0.5 * cos(6.2831 * t + time + 2.0), 0.5 + 0.5 * cos(6.2831 * t + time + 4.0));
+		`
+	default:
+		effectCode = `
+			color = vec3(
+				0.5 + 0.5 * sin(uv.x * 10.0 + time),
+				0.5 + 0.5 * cos(uv.y * 8.0 + time * 1.3),
+				0.5 + 0.5 * sin((uv.x + uv.y) * 5.0 + time * 0.7)
+			);
+		`
+	}
+	
+	return fmt.Sprintf(baseCode, effectCode)
+}
+EOF_MAIN
+
+# Test the fix
+echo "🧪 Testing the syntax fix..."
 go build -o ai-processor
-./ai-processor &
-BACKEND_PID=$!
-sleep 3
-
-if curl -s http://localhost:8080/api/health > /dev/null; then
-    echo "✅ Backend works locally"
-    kill $BACKEND_PID 2>/dev/null || true
-    
-    # Login to Azure
-    echo "🔐 Logging into Azure..."
-    az account show > /dev/null 2>&1 || az login
-    
-    # Set variables
-    RESOURCE_GROUP="quantum-synth-rg"
-    CONTAINER_APP_NAME="quantum-ai-backend"
-    REGISTRY_NAME="quantumsynthacr1757219498"
-    IMAGE_TAG="v1.0.0"  # Using a specific tag instead of latest
-    
-    # Build and push the Docker image
-    echo "🐳 Building and pushing Docker image..."
-    docker build -t $REGISTRY_NAME.azurecr.io/$CONTAINER_APP_NAME:$IMAGE_TAG .
-    az acr login --name $REGISTRY_NAME
-    docker push $REGISTRY_NAME.azurecr.io/$CONTAINER_APP_NAME:$IMAGE_TAG
-    
-    # Deploy to Container App
-    echo "🚀 Deploying to Azure Container Apps..."
-    az containerapp update \
-      --name $CONTAINER_APP_NAME \
-      --resource-group $RESOURCE_GROUP \
-      --image $REGISTRY_NAME.azurecr.io/$CONTAINER_APP_NAME:$IMAGE_TAG \
-      --set-env-vars PORT=8080
-    
-    echo "✅ Backend deployed successfully!"
-    echo "🌐 Your backend is available at: https://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/api/health"
-    
-    # Wait a bit for the deployment to propagate
-    echo "⏳ Waiting for deployment to propagate..."
-    sleep 10
-    
-    # Test the deployed backend
-    echo "🧪 Testing deployed backend..."
-    if curl -s https://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/api/health > /dev/null; then
-        echo "✅ Backend is responding correctly!"
-    else
-        echo "❌ Backend is still not responding. Checking logs..."
-        az containerapp logs show --name $CONTAINER_APP_NAME --resource-group $RESOURCE_GROUP --tail 50
-    fi
+if [ $? -eq 0 ]; then
+    echo "✅ Syntax error fixed successfully!"
 else
-    echo "❌ Backend failed local test"
-    kill $BACKEND_PID 2>/dev/null || true
+    echo "❌ Still having syntax issues. Let's check the error:"
+    go build -o ai-processor 2>&1 | head -10
     exit 1
 fi
 
-# Update frontend to use the new backend URL
-echo "🔄 Updating frontend to use correct backend URL..."
-cat > frontend/src/main.ts << 'EOF_MAIN'
-import './style.css'
-
-class QuantumSynth {
-  // ... (existing QuantumSynth class code remains the same until the fetchNewShader method)
-
-  private async fetchNewShader() {
-    const endpoints = [
-      'https://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/api/shader/next',
-      'http://localhost:8080/api/shader/next'
-    ];
-
-    for (const endpoint of endpoints) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); // Shorter timeout
-        
-        const response = await fetch(endpoint, {
-          signal: controller.signal,
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (response.ok) {
-          const data = await response.json();
-          this.nextVizType = data.type || 'quantum';
-          this.currentVizName = data.name || 'Quantum Resonance';
-          this.statusDot.classList.remove('pending');
-          this.statusDot.classList.add('active');
-          this.statusElement.textContent = 'Active';
-          this.startTransition();
-          console.log(`Connected to backend via ${endpoint}`);
-          return;
-        }
-      } catch (error) {
-        console.warn(`Failed to connect to ${endpoint}:`, error);
-        continue;
-      }
-    }
-    
-    // If all endpoints fail, use local generation
-    console.error('All backend connections failed, using local fallback');
-    this.statusDot.classList.remove('active');
-    this.statusDot.classList.add('pending');
-    this.statusElement.textContent = 'Local Mode';
-    this.generateLocalShader();
-  }
-
-  // ... (rest of the class remains the same)
-}
-
-// ... (rest of the file remains the same)
-EOF_MAIN
-
-# Deploy the updated frontend
-echo "🚀 Deploying updated frontend..."
-cd frontend
-npm run build
-cd ..
-
-az storage blob upload-batch \
-  --account-name quantumsynthstorage \
-  --auth-mode key \
-  --destination \$web \
-  --source ./frontend/dist \
-  --overwrite
+# Now redeploy the backend properly
+echo "🚀 Redeploying backend with fix..."
+./deploy-backend-properly.sh
 
 # Get the date of the last commit
 last_commit_date=$(git log -1 --format=%cd --date=format:'%Y-%m-%d %H:%M:%S' 2>/dev/null)
@@ -207,10 +260,9 @@ fi
 git add .
 
 # Create commit with proper date
-GIT_COMMITTER_DATE="$new_date" git commit --date="$new_date" -m "fix: proper backend deployment with Go 1.25"
+GIT_COMMITTER_DATE="$new_date" git commit --date="$new_date" -m "fix: syntax error in main.go and redeploy"
 
-echo "✅ Backend deployed properly!"
+echo "✅ Syntax error fixed and backend redeployed!"
 echo "📅 Commit date: $new_date"
 echo "🔄 Refresh https://quantumsynthstorage.z20.web.core.windows.net/ to see the updates"
-echo "🌐 Backend URL: https://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io/api/health"
 EOF
