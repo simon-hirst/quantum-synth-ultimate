@@ -1,17 +1,24 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
-	"time"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 )
+
+//go:embed frontend/dist/* frontend/dist/**/*
+// Note: if dist isn't present at build time, static serving will just fall back to disk path.
+var distFS embed.FS
 
 // ShaderParams represents the parameters for a shader
 type ShaderParams struct {
@@ -24,97 +31,152 @@ type ShaderParams struct {
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	// Get port from environment variable or use default
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	// Config
+	port := getenvDefault("PORT", "8080")
+	staticDir := getenvDefault("STATIC_DIR", "./frontend/dist")
+	version := getenvDefault("APP_VERSION", "2.2.2")
+	allowedOrigins := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS")) // comma-separated or "*" or empty
 
 	router := mux.NewRouter()
 
 	// API endpoints
 	router.HandleFunc("/api/shader/next", getNextShader).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/shader/current", getCurrentShader).Methods("GET", "OPTIONS")
-	router.HandleFunc("/api/health", healthCheck).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+		respondJSON(w, http.StatusOK, map[string]any{
+			"status":    "healthy",
+			"timestamp": time.Now(),
+			"version":   version,
+		})
+	}).Methods("GET", "OPTIONS")
 
-	// Serve frontend
-	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./frontend/dist/")))
+	// Static files / SPA fallback
+	router.PathPrefix("/").Handler(spaHandler(staticDir, "index.html"))
 
-	// Configure CORS
-	corsMiddleware := handlers.CORS(
-		handlers.AllowedOrigins([]string{"*"}),
+	// CORS setup
+	corsOpts := []handlers.CORSOption{
 		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
 		handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-Requested-With"}),
-		handlers.AllowCredentials(),
-	)
+	}
+	if allowedOrigins == "" {
+		corsOpts = append(corsOpts, handlers.AllowedOrigins([]string{"*"}))
+	} else {
+		parts := strings.Split(allowedOrigins, ",")
+		for i := range parts {
+			parts[i] = strings.TrimSpace(parts[i])
+		}
+		corsOpts = append(corsOpts, handlers.AllowedOrigins(parts))
+		// Only allow credentials if NOT wildcard
+		if !(len(parts) == 1 && parts[0] == "*") {
+			corsOpts = append(corsOpts, handlers.AllowCredentials())
+		}
+	}
+	corsMiddleware := handlers.CORS(corsOpts...)
 
-	fmt.Printf("QuantumSynth Infinite server starting on :%s\n", port)
-	log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(router)))
+	// HTTP server with sane timeouts
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           corsMiddleware(loggingMiddleware(router)),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	log.Printf("QuantumSynth Infinite server starting on :%s", port)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
 }
 
-// Add OPTIONS handler for preflight requests
-func optionsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-	w.WriteHeader(http.StatusOK)
-}
+// ---------- Handlers ----------
 
 func getNextShader(w http.ResponseWriter, r *http.Request) {
-	// Handle OPTIONS preflight
-	if r.Method == "OPTIONS" {
-		optionsHandler(w, r)
-		return
-	}
-	
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	shader := generateRandomShader()
-	json.NewEncoder(w).Encode(shader)
+	respondJSON(w, http.StatusOK, generateRandomShader())
 }
 
 func getCurrentShader(w http.ResponseWriter, r *http.Request) {
-	// Handle OPTIONS preflight
-	if r.Method == "OPTIONS" {
-		optionsHandler(w, r)
-		return
-	}
-	
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	shader := generateRandomShader()
-	json.NewEncoder(w).Encode(shader)
+	respondJSON(w, http.StatusOK, generateRandomShader())
 }
 
-func healthCheck(w http.ResponseWriter, r *http.Request) {
-	// Handle OPTIONS preflight
-	if r.Method == "OPTIONS" {
-		optionsHandler(w, r)
-		return
-	}
-	
+// ----------- Helpers -----------
+
+func respondJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":    "healthy",
-		"timestamp": time.Now(),
-		"version":   "2.2.1",
+	// Cache rules here if needed:
+	// w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func getenvDefault(k, def string) string {
+	if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+		return v
+	}
+	return def
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		log.Printf("%s %s (%s)", r.Method, r.URL.Path, time.Since(start))
 	})
 }
+
+// spaHandler serves static files from disk if present; otherwise falls back to embedded distFS.
+// Any non-existent path falls back to index.html (for SPA routes).
+func spaHandler(staticDir, index string) http.Handler {
+	// Prefer disk (live dev), else embedded FS (if embedded at build time).
+	tryDisk := func(p string) (http.File, error) {
+		f, err := os.Open(filepath.Join(staticDir, p))
+		if err == nil {
+			return f, nil
+		}
+		return nil, err
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
+			path = index
+		}
+		// Try disk first
+		if f, err := tryDisk(path); err == nil {
+			_ = f.Close()
+			http.ServeFile(w, r, filepath.Join(staticDir, path))
+			return
+		}
+		// Try embedded
+		if f, err := distFS.Open("frontend/dist/" + path); err == nil {
+			_ = f.Close()
+			http.FileServer(http.FS(distFS)).ServeHTTP(w, r)
+			return
+		}
+		// Fallback to index.html
+		// Disk first
+		if f, err := tryDisk(index); err == nil {
+			_ = f.Close()
+			http.ServeFile(w, r, filepath.Join(staticDir, index))
+			return
+		}
+		// Embedded fallback
+		http.ServeFileFS(w, r, distFS, "frontend/dist/"+index)
+	})
+}
+
+// ---- Shader generation (current JSON contract) ----
 
 func generateRandomShader() ShaderParams {
 	shaderTypes := []string{"quantum", "neural", "temporal", "fractal", "harmonic", "resonance"}
 	shaderNames := []string{
-		"Quantum Resonance", 
-		"Neural Particles", 
+		"Quantum Resonance",
+		"Neural Particles",
 		"Temporal Waveforms",
 		"Fractal Dimensions",
 		"Harmonic Oscillations",
-                "Resonance Fields",
+		"Resonance Fields",
 	}
-	
 	randomIndex := rand.Intn(len(shaderTypes))
-	
 	return ShaderParams{
 		Type:       shaderTypes[randomIndex],
 		Name:       shaderNames[randomIndex],
@@ -129,15 +191,13 @@ func generateShaderCode(shaderType string) string {
 			vec2 uv = gl_FragCoord.xy / iResolution.xy;
 			float time = iTime * 0.5;
 			vec3 color = vec3(0.0);
-			
+
 			%s
-			
+
 			gl_FragColor = vec4(color, 1.0);
 		}
 	`
-	
 	var effectCode string
-	
 	switch shaderType {
 	case "quantum":
 		effectCode = `
@@ -166,7 +226,7 @@ func generateShaderCode(shaderType string) string {
 			uv = uv * 2.0 - 1.0;
 			float angle = atan(uv.y, uv.x);
 			float radius = length(uv);
-			
+
 			for (int i = 0; i < 8; i++) {
 				float fi = float(i);
 				float wave = sin(radius * 20.0 - time * 3.0 + fi * 0.5) * 0.5 + 0.5;
@@ -177,10 +237,10 @@ func generateShaderCode(shaderType string) string {
 		effectCode = `
 			uv = (uv - 0.5) * 2.0;
 			uv.x *= iResolution.x / iResolution.y;
-			
+
 			vec2 c = vec2(0.285 + 0.1 * sin(time * 0.3), 0.01 + 0.1 * cos(time * 0.2));
 			vec2 z = uv;
-			
+
 			int iterations = 0;
 			for (int i = 0; i < 100; i++) {
 				z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
@@ -189,7 +249,7 @@ func generateShaderCode(shaderType string) string {
 				}
 				iterations++;
 			}
-			
+
 			float t = float(iterations) / 100.0;
 			color = vec3(0.5 + 0.5 * cos(6.2831 * t + time), 0.5 + 0.5 * cos(6.2831 * t + time + 2.0), 0.5 + 0.5 * cos(6.2831 * t + time + 4.0));
 		`
@@ -202,6 +262,5 @@ func generateShaderCode(shaderType string) string {
 			);
 		`
 	}
-	
 	return fmt.Sprintf(baseCode, effectCode)
 }
