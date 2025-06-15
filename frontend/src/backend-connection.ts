@@ -10,7 +10,7 @@ export class BackendConnection {
         const wsUrl = `${protocol}//${this.url}/ws`;
         
         console.log('Connecting to:', wsUrl);
-        this.ws = new WebSocket(wsUrl);
+        this.ws = new WebSocket(`${(window.location.protocol === 'https:' ? 'wss:' : 'ws:')}//${this.url}/ws`);
         
         this.ws.onopen = () => {
             console.log('✅ Connected to AI backend via', protocol);
@@ -48,4 +48,7 @@ export class BackendConnection {
     }
 }
 
-export const backendConnection = new BackendConnection('quantum-ai-backend-https.wittydune-e7dd7422.eastus.azurecontainerapps.io');
+
+export const backendConnection = new BackendConnection(
+  (import.meta as any).env?.VITE_BACKEND_HOST || window.location.host
+);
