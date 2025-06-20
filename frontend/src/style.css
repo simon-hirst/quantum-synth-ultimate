@@ -425,3 +425,94 @@ html, body, #app {
   touch-action: none;
 }
 
+
+
+:root { --qs-bg: #05070b; }
+html, body, #app { height: 100%; margin: 0; background: radial-gradient(1200px at 50% -200px, #0a1020 0%, var(--qs-bg) 60%, #000 100%); }
+
+
+
+.quantum-container {
+  width: 100%;
+  height: clamp(320px, 70vh, 900px);
+  display: grid;
+  place-items: stretch;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+
+
+#visualizer {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  background: #000;
+  box-shadow: 0 6px 30px rgba(0,0,0,.35);
+  touch-action: none;
+}
+
+
+
+:root{
+  --bg-0:#03060b; --bg-1:#070a12; --glass:#0b1220cc;
+  --stroke:#0e1629; --text:#e7f0ff; --muted:#9bb0d0;
+  --accent:#5cf9ff; --accent2:#9f6bff; --shadow:rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body,#app{height:100%;margin:0;background:radial-gradient(1200px at 50% -200px,#0a1020 0%,var(--bg-0) 50%, #000 100%); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;}
+
+
+
+.qs-shell{
+  display:grid;
+  grid-template-columns: 340px 1fr;
+  gap: 18px;
+  height:100%;
+  padding:24px;
+}
+@media (max-width: 920px){
+  .qs-shell{ grid-template-columns: 1fr; }
+}
+
+
+
+.glass{
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--stroke);
+  box-shadow: 0 20px 80px var(--shadow);
+  border-radius: 14px;
+}
+
+
+
+.qs-panel{
+  padding:22px 20px 16px;
+}
+.qs-title{font-weight:800; letter-spacing:.2px; font-size:28px; margin:0 0 2px;}
+.qs-sub{margin:0 0 10px; color:var(--muted); font-weight:600}
+.qs-divider{height:1px; background:linear-gradient(90deg,transparent, #384b78 40%,transparent); margin:10px 0 14px;}
+.qs-h2{margin:8px 0 6px; font-size:15px; font-weight:700; color:#cfe2ff;}
+.qs-list{margin:0; padding-left:18px; color:var(--muted); line-height:1.55;}
+.qs-list li{margin:6px 0;}
+.qs-footer{margin-top:18px; font-size:12px; color:#94a8cc;}
+.qs-footer a{color:var(--accent); text-decoration:none;}
+.qs-footer a:hover{text-decoration:underline;}
+
+
+
+.qs-stage{
+  position:relative;
+  border-radius:16px;
+  overflow:hidden;
+  border:1px solid var(--stroke);
+  background:linear-gradient(180deg,#05070b, #020408);
+  box-shadow: 0 20px 80px var(--shadow);
+  display:grid;
+}
+.qs-canvas{
+  width:100%; height:100%; display:block; touch-action:none;
+}
+

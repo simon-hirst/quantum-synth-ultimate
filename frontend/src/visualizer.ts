@@ -1,70 +1,74 @@
-import { QuantumSynthUI } from './ui';
+// Minimal, standalone WebGL visualizer with DPR-aware sizing.
+// Cycles a few shader styles to avoid the flat gradient look.
 
-export class QuantumSynth {
+type GL = WebGLRenderingContext | WebGL2RenderingContext;
+
+export class Visualizer {
   private canvas: HTMLCanvasElement;
-  private ui: QuantumSynthUI;
-  private gl: WebGLRenderingContext | WebGL2RenderingContext | null = null;
+  private gl: GL | null = null;
   private program: WebGLProgram | null = null;
   private buffer: WebGLBuffer | null = null;
   private animationId: number | null = null;
+  private shaderIndex = 0;
+  private lastSwitch = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    this.ui = new QuantumSynthUI();
-
-    // DPR/container-aware sizing
     this.resizeCanvas();
     window.addEventListener('resize', () => this.resizeCanvas());
     window.addEventListener('orientationchange', () => this.resizeCanvas());
 
-    // Try WebGL2 then WebGL1
-    this.gl = (canvas.getContext('webgl2') as WebGL2RenderingContext | null) ||
-              (canvas.getContext('webgl')  as WebGLRenderingContext  | null);
-
+    this.gl = (canvas.getContext('webgl2') as GL) || (canvas.getContext('webgl') as GL);
     if (!this.gl) {
       this.setup2DFallback();
-      this.ui.updateStatus('WebGL not supported - Using 2D fallback');
       return;
     }
 
-    // WebGL init
-    if (!this.initGL()) {
-      this.setup2DFallback();
-      this.ui.updateStatus('WebGL init failed - Using 2D fallback');
-      return;
-    }
-
-    this.ui.updateStatus('Ready');
+    this.initGL();
   }
 
-  initialize() {
-    // Start the render loop if GL is available; otherwise 2D fallback paints once.
-    if (this.gl && this.program) this.start();
+  start() {
+    if (!this.gl || !this.program) return;
+    const render = (now: number) => {
+      this.render(now);
+      this.animationId = requestAnimationFrame(render);
+    };
+    this.animationId = requestAnimationFrame(render);
   }
+
+  stop() {
+    if (this.animationId) cancelAnimationFrame(this.animationId);
+    this.animationId = null;
+  }
+
+  // ---------- internals ----------
 
   private resizeCanvas() {
     const container = this.canvas.parentElement ?? document.body;
     const rect = container.getBoundingClientRect();
     const cssW = Math.max(1, Math.floor(rect.width));
-    const cssH = Math.max(1, Math.floor((rect.height || 0) || 400));
-    const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    const cssH = Math.max(1, Math.floor((rect.height || 0) || 420));
+    const dpr  = Math.max(1, Math.round(window.devicePixelRatio || 1));
 
     this.canvas.style.width  = `${cssW}px`;
     this.canvas.style.height = `${cssH}px`;
-    const needResize = this.canvas.width !== cssW * dpr || this.canvas.height !== cssH * dpr;
-    if (needResize) {
+
+    const need = (this.canvas.width !== cssW * dpr) || (this.canvas.height !== cssH * dpr);
+    if (need) {
       this.canvas.width  = cssW * dpr;
       this.canvas.height = cssH * dpr;
     }
     if (this.gl) this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
   }
 
-  private initGL(): boolean {
-    const gl = this.gl!;
-    // Fullscreen quad (two triangles)
+  private initGL() {
+    if (!this.gl) return;
+    const gl = this.gl;
+
+    // Quad
     const verts = new Float32Array([
-      -1, -1,   1, -1,  -1,  1,
-       1, -1,   1,  1,  -1,  1,
+      -1, -1,  1, -1,  -1,  1,
+       1, -1,  1,  1,  -1,  1,
     ]);
 
     const vs = `
@@ -76,43 +80,82 @@ export class QuantumSynth {
       }
     `;
 
-    const fs = `
-      precision mediump float;
-      varying vec2 vUV;
-      uniform float uTime;
-      void main() {
-        // simple animated color field
-        float t = uTime * 0.5;
-        vec2 uv = vUV;
-        float w1 = sin(uv.x * 10.0 + t);
-        float w2 = cos(uv.y *  8.0 + t * 1.3);
-        vec3 col = vec3(
-          abs(sin(t + uv.x * 2.0)),
-          abs(cos(t + uv.y * 2.0)),
-          abs(sin(t * 1.5 + uv.x * 3.0))
-        ) * 0.85 + 0.15;
-        col += 0.08 * vec3(w1, w2, w1*w2);
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `;
+    const fsList = [
+      // 0 — bands + bloom-ish mix
+      `
+        precision mediump float;
+        varying vec2 vUV;
+        uniform float uTime;
+        uniform vec2  uRes;
+        void main() {
+          vec2 uv = vUV;
+          float t = uTime * 0.6;
+          float bands = sin(uv.y*24.0 + t*3.0)*0.5 + 0.5;
+          float rings = sin(length(uv-0.5)*20.0 - t*2.0)*0.5 + 0.5;
+          float glow  = 0.25 / (0.05 + pow(distance(uv, vec2(0.5,0.5)), 1.5));
+          vec3 col = mix(vec3(0.08,0.15,0.9), vec3(1.0,0.1,0.6), bands);
+          col = mix(col, vec3(0.2,1.0,0.9), rings);
+          col += glow * vec3(0.9,0.6,0.2);
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+      // 1 — flow field
+      `
+        precision mediump float;
+        varying vec2 vUV;
+        uniform float uTime;
+        void main() {
+          vec2 uv = vUV * 2.0 - 1.0;
+          float t = uTime * 0.3;
+          float a = atan(uv.y, uv.x);
+          float r = length(uv);
+          float k = sin(5.0*a + t*2.0) * cos(6.0*r - t*3.0);
+          vec3 col = vec3(0.5 + 0.5*sin(t + k + 0.0),
+                          0.5 + 0.5*sin(t + k + 2.1),
+                          0.5 + 0.5*sin(t + k + 4.2));
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+      // 2 — chromatic warp
+      `
+        precision mediump float;
+        varying vec2 vUV;
+        uniform float uTime;
+        void main() {
+          vec2 uv = vUV;
+          float t = uTime * 0.8;
+          vec2 p = uv - 0.5;
+          float d = length(p);
+          float wave = sin(30.0*d - t*4.0);
+          vec3 col = vec3(
+            0.6 + 0.4*sin(t + wave + 0.0),
+            0.6 + 0.4*sin(t + wave + 2.0),
+            0.6 + 0.4*sin(t + wave + 4.0)
+          );
+          col *= smoothstep(0.0, 0.7, 0.85 - d);
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `
+    ];
 
     const vsh = this.createShader(gl.VERTEX_SHADER, vs);
-    const fsh = this.createShader(gl.FRAGMENT_SHADER, fs);
-    if (!vsh || !fsh) return false;
+    const fsh = this.createShader(gl.FRAGMENT_SHADER, fsList[this.shaderIndex]);
+    if (!vsh || !fsh) { this.setup2DFallback(); return; }
 
     const prog = gl.createProgram();
-    if (!prog) return false;
+    if (!prog) { this.setup2DFallback(); return; }
     gl.attachShader(prog, vsh);
     gl.attachShader(prog, fsh);
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
       console.error('Program link error:', gl.getProgramInfoLog(prog));
-      return false;
+      this.setup2DFallback();
+      return;
     }
     this.program = prog;
 
     const buf = gl.createBuffer();
-    if (!buf) return false;
+    if (!buf) { this.setup2DFallback(); return; }
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
     this.buffer = buf;
@@ -122,48 +165,46 @@ export class QuantumSynth {
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
-    this.resizeCanvas(); // ensure viewport matches backing size
-    return true;
+    this.resizeCanvas();
+    this.lastSwitch = performance.now();
   }
 
-  private start() {
-    const render = () => {
-      if (!this.gl || !this.program) return;
-      const gl = this.gl;
+  private render(nowMs: number) {
+    if (!this.gl || !this.program) return;
+    const gl = this.gl;
 
-      gl.clearColor(0, 0, 0, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-
-      const tLoc = gl.getUniformLocation(this.program, 'uTime');
-      if (tLoc) gl.uniform1f(tLoc, performance.now() / 1000);
-
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-      this.animationId = requestAnimationFrame(render);
-    };
-    render();
-  }
-
-  private stop() {
-    if (this.animationId) {
-      cancelAnimationFrame(this.animationId);
-      this.animationId = null;
+    // Auto-cycle shader every ~18s to keep it lively
+    if (nowMs - this.lastSwitch > 18000) {
+      this.shaderIndex = (this.shaderIndex + 1) % 3;
+      this.initGL(); // recompile with next fragment shader
     }
+
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    const uTime = gl.getUniformLocation(this.program!, 'uTime');
+    const uRes  = gl.getUniformLocation(this.program!, 'uRes');
+    if (uTime) gl.uniform1f(uTime, nowMs / 1000);
+    if (uRes)  gl.uniform2f(uRes, this.canvas.width, this.canvas.height);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
   private setup2DFallback() {
     const ctx = this.canvas.getContext('2d');
     if (!ctx) return;
-    const draw = () => {
-      const w = this.canvas.clientWidth;
-      const h = this.canvas.clientHeight;
-      ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = '#0f0';
-      ctx.font = '16px Arial';
-      ctx.fillText('WebGL not available - Using 2D fallback', 20, 40);
+    const paint = () => {
+      const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
+      ctx.clearRect(0,0,w,h);
+      const grd = ctx.createLinearGradient(0,0,w,h);
+      grd.addColorStop(0, '#0b1020'); grd.addColorStop(1, '#000');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0,0,w,h);
+      ctx.fillStyle = '#9efcff';
+      ctx.font = '14px system-ui, -apple-system, Segoe UI, Roboto';
+      ctx.fillText('WebGL unavailable — using fallback', 16, 28);
     };
-    draw();
+    paint();
   }
 
   private createShader(type: number, source: string): WebGLShader | null {
@@ -178,10 +219,5 @@ export class QuantumSynth {
       return null;
     }
     return sh;
-  }
-
-  // for cleanup if needed
-  disconnect() {
-    this.stop();
   }
 }
