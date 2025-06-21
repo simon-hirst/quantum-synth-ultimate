@@ -516,3 +516,36 @@ html,body,#app{height:100%;margin:0;background:radial-gradient(1200px at 50% -20
   width:100%; height:100%; display:block; touch-action:none;
 }
 
+
+
+:root{
+  --bg-0:#03060b; --glass:#0b1220cc; --stroke:#0e1629;
+  --text:#e7f0ff; --muted:#9bb0d0; --accent:#5cf9ff; --accent2:#9f6bff; --shadow:rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body,#app{height:100%;margin:0;background:radial-gradient(1200px at 50% -200px,#0a1020 0%,var(--bg-0) 50%, #000 100%); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;}
+.qs-shell{display:grid;grid-template-columns:340px 1fr;gap:18px;height:100%;padding:24px;}
+@media (max-width:920px){.qs-shell{grid-template-columns:1fr}}
+.glass{background:var(--glass);backdrop-filter:blur(14px);border:1px solid var(--stroke);box-shadow:0 20px 80px var(--shadow);border-radius:14px;}
+.qs-panel{padding:22px 20px 16px;}
+.qs-title{font-weight:800;letter-spacing:.2px;font-size:28px;margin:0 0 2px;}
+.qs-sub{margin:0 0 10px;color:var(--muted);font-weight:600}
+.qs-divider{height:1px;background:linear-gradient(90deg,transparent,#384b78 40%,transparent);margin:10px 0 14px;}
+.qs-h2{margin:10px 0 6px;font-size:15px;font-weight:700;color:#cfe2ff;}
+.qs-list{margin:0;padding-left:18px;color:var(--muted);line-height:1.55;}
+.qs-list li{margin:6px 0;}
+.qs-footer{margin-top:18px;font-size:12px;color:#94a8cc;}
+.qs-footer a{color:var(--accent);text-decoration:none}
+.qs-footer a:hover{text-decoration:underline}
+.qs-kv{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.qs-status{font-size:14px;color:#cfe2ff}
+.qs-fps{font-size:12px;color:#9bb0d0}
+.qs-actions{display:flex;gap:10px;margin:8px 0 10px}
+.btn{appearance:none;border:1px solid var(--stroke);border-radius:10px;padding:10px 12px;font-weight:700;letter-spacing:.2px;cursor:pointer;transition:transform .06s ease, box-shadow .2s ease, background .2s ease;color:var(--text)}
+.btn:disabled{opacity:.6;cursor:not-allowed}
+.btn-primary{background:linear-gradient(135deg,#1b2a44,#121a2c);box-shadow:0 8px 22px rgba(0,0,0,.35)}
+.btn-primary:hover{transform:translateY(-1px)}
+.btn-ghost{background:transparent}
+.qs-stage{position:relative;border-radius:16px;overflow:hidden;border:1px solid var(--stroke);background:linear-gradient(180deg,#05070b,#020408);box-shadow:0 20px 80px var(--shadow);display:grid}
+.qs-canvas{width:100%;height:100%;display:block;touch-action:none}
+
