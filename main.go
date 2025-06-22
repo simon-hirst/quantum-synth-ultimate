@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-		"strings"
+	"strings"
 	"time"
 
 	"github.com/gorilla/handlers"
