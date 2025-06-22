@@ -1,7 +1,7 @@
 import './style.css'
 import { Visualizer } from './visualizer';
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const root = document.querySelector<HTMLDivElement>('#app');
   if (!root) return;
 
@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <li>Use Chrome or Edge for best results</li>
           <li>When prompted, tick <b>“Share audio”</b></li>
           <li>Select the tab/window you want visualised</li>
+          <li>Press <b>N</b> to load next server shader</li>
         </ol>
 
         <div class="qs-footer">
@@ -40,52 +41,43 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
   `;
 
-  const canvas = document.getElementById('visualizer') as HTMLCanvasElement | null;
+  const canvas  = document.getElementById('visualizer') as HTMLCanvasElement | null;
   const statusEl = document.getElementById('status')!;
   const fpsEl    = document.getElementById('fps')!;
   const btnShare = document.getElementById('btnShare') as HTMLButtonElement;
   const btnDemo  = document.getElementById('btnDemo') as HTMLButtonElement;
-
   if (!canvas) return;
 
   const viz = new Visualizer(canvas, {
     onStatus: (s) => { statusEl.textContent = s; },
     onFps: (f) => { fpsEl.textContent = `FPS: ${f}`; },
   });
-  viz.start(); // Start render loop (audio uniforms will be 0 until a source is provided)
+
+  await viz.start(); // loads server shader and starts render loop
+
+  const updateShareButton = () => {
+    btnShare.textContent = viz.isSharing() ? 'Stop Screen Sharing' : 'Start Screen Sharing';
+  };
+  updateShareButton();
 
   btnShare.addEventListener('click', async () => {
+    if (viz.isSharing()) {
+      viz.stopScreenShare();
+      statusEl.textContent = 'Screen share stopped';
+      updateShareButton();
+      return;
+    }
+
     btnShare.disabled = true;
     statusEl.textContent = 'Requesting screen share (enable "Share audio")…';
     try {
       await viz.startScreenShare();
       statusEl.textContent = 'Screen sharing active';
-      btnShare.textContent = 'Stop Screen Sharing';
-      btnShare.disabled = false;
-
-      // Toggle behaviour: stop if already sharing
-      btnShare.onclick = async () => {
-        if (viz.isSharing()) {
-          viz.stopScreenShare();
-          statusEl.textContent = 'Screen share stopped';
-          btnShare.textContent = 'Start Screen Sharing';
-        } else {
-          btnShare.disabled = true;
-          statusEl.textContent = 'Requesting screen share…';
-          try {
-            await viz.startScreenShare();
-            statusEl.textContent = 'Screen sharing active';
-            btnShare.textContent = 'Stop Screen Sharing';
-          } catch (e) {
-            statusEl.textContent = 'Permission denied or no audio shared';
-          } finally {
-            btnShare.disabled = false;
-          }
-        }
-      };
-    } catch (e) {
+    } catch {
       statusEl.textContent = 'Permission denied or no audio shared';
+    } finally {
       btnShare.disabled = false;
+      updateShareButton();
     }
   });
 
@@ -95,5 +87,12 @@ document.addEventListener('DOMContentLoaded', () => {
     viz.setDemoMode(demo);
     btnDemo.textContent = demo ? 'Stop Demo' : 'Demo Mode';
     statusEl.textContent = demo ? 'Demo mode active' : 'Ready';
+  });
+
+  // Hotkey for next server shader
+  document.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'n') {
+      (viz as any).loadServerShader?.();
+    }
   });
 });
