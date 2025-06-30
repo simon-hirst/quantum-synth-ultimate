@@ -1,9 +1,10 @@
 /**
- * QuantumSynth Visualizer — Amped + New Morphs (CLAMP-FIX)
- * - Stronger audio reactivity + impact driver
+ * QuantumSynth Visualizer — Amped + Morphs (no bad clamp + no gradient fallback)
+ * - Stronger audio reactivity, impact driver
  * - Classic scenes + WOW + server shader
- * - Morphs (0..5), now using float-only clamp helper to avoid WebGL1 overload issues
- * - Resilient shader compile: logs and continues so UI stays interactive
+ * - Seamless morph transitions
+ * - NO fallback gradient; if a shader fails to compile we skip it
+ * - All clamp() issues removed (use min/max or helper qclamp)
  */
 type GL = WebGLRenderingContext | WebGL2RenderingContext;
 type VizOpts = { onStatus?: (s: string) => void; onFps?: (fps: number) => void; };
@@ -112,16 +113,11 @@ export class Visualizer {
     this.opts.onStatus?.('Ready. M: next • 1–7 classic • 5 WOW • V WOW/Server • N server shader');
   }
 
-  private safeLink(name:string, fsSrc:string){
+  private safeLink(name:string, fsSrc:string): WebGLProgram | null {
     try { return link(this.gl!, VS, fsSrc); }
     catch (e:any) {
-      console.error(`[Shader:${name}]`, e?.message||e, fsSrc);
-      // Minimal fallback shader ensures UI keeps working
-      const fallback = `
-        precision mediump float; varying vec2 vUV;
-        void main(){ gl_FragColor = vec4(vUV, 0.0, 1.0); }
-      `;
-      try { return link(this.gl!, VS, fallback); } catch{ return null; }
+      console.error(`[Shader:${name}]`, e?.message||e);
+      return null; // skip broken scene; no ugly gradient fallback
     }
   }
 
@@ -139,7 +135,7 @@ export class Visualizer {
     this.texSceneA=mkTex(w,h); this.sceneA=mkFB(this.texSceneA);
     this.texSceneB=mkTex(w,h); this.sceneB=mkFB(this.texSceneB);
 
-    // compile scenes (with resilience)
+    // compile scenes
     this.sceneProg['barsPro']     = this.safeLink('barsPro',     FS_BARSPRO);
     this.sceneProg['radialRings'] = this.safeLink('radialRings', FS_RADIALRINGS);
     this.sceneProg['oscDual']     = this.safeLink('oscDual',     FS_OSCDUAL);
@@ -243,7 +239,6 @@ export class Visualizer {
     const r=await fetch(url,{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status);
     const s = (await r.json()) as ServerShader;
     const gl=this.gl!;
-    // Make sure backend code compiles; if not, we keep current serverProg
     try{
       const p = link(gl, VS, s.code);
       this.serverProg = p;
@@ -486,16 +481,35 @@ float smooth2D(vec2 p){
 }
 `;
 
-// Bars
+// Helpers (remove fragile clamp usage)
+const SPEC_HELP = `
+uniform sampler2D uSpecTex; uniform float uSpecN;
+float specSample(float x){
+  float xx = min(max(x, 0.0), 0.999);
+  float i = floor(xx * uSpecN);
+  float u = (i + 0.5) / uSpecN;
+  return texture2D(uSpecTex, vec2(u,0.5)).r;
+}
+`;
+const WAVE_HELP = `
+uniform sampler2D uWaveTex; uniform float uWaveN;
+float waveSample(float x){
+  float xx = min(max(x, 0.0), 0.999);
+  float i = floor(xx * uWaveN);
+  float u = (i + 0.5) / uWaveN;
+  return texture2D(uWaveTex, vec2(u,0.5)).r;
+}
+`;
+
+// Bars — uses SPEC_HELP
 const FS_BARSPRO = `
 precision mediump float; varying vec2 vUV;
-uniform sampler2D uSpecTex; uniform float uSpecN;
+${SPEC_HELP}
 uniform float uTime,uLevel,uBeat,uLow,uMid,uAir,uImpact;
-float spec(float x){ float i=floor(clamp(x,0.999)*uSpecN); float u=(i+0.5)/uSpecN; return texture2D(uSpecTex, vec2(u,0.5)).r; }
 void main(){
   vec2 uv=vUV;
   float x = pow(uv.x, 0.72);
-  float a = spec(x);
+  float a = specSample(x);
   float H = 0.05 + 1.35*a + 0.65*uLevel + 0.25*uLow + 0.35*uImpact;
   float body = step(uv.y, H);
   float cap = smoothstep(H, H-0.03-0.04*uAir-0.03*uImpact, uv.y);
@@ -509,17 +523,16 @@ void main(){
 }
 `;
 
-// Radial rings
+// Radial rings — uses SPEC_HELP
 const FS_RADIALRINGS = `
 precision mediump float; varying vec2 vUV;
-uniform sampler2D uSpecTex; uniform float uSpecN;
+${SPEC_HELP}
 uniform float uTime,uBeat,uLow,uMid,uAir,uImpact;
 ${NOISE}
-float spec(float i){ float u=(i+0.5)/uSpecN; return texture2D(uSpecTex, vec2(u,0.5)).r; }
 void main(){
   vec2 p = vUV*2.0-1.0; float r=length(p)+1e-4; float a=atan(p.y,p.x);
-  float idx = (a+3.14159)/6.28318 * uSpecN;
-  float s = spec(floor(idx));
+  float idx = (a+3.14159)/6.28318;
+  float s = specSample(fract(idx));
   float k = 10.0 + 36.0*uAir + 10.0*uImpact;
   float phase = uTime*0.7 + uLow*2.4 + 0.4*uImpact;
   float rings = smoothstep(0.01,0.0,abs(fract(r*k+phase)-0.5)-0.24) * (0.4+1.8*s+0.7*uImpact);
@@ -531,15 +544,14 @@ void main(){
 }
 `;
 
-// Dual oscilloscope
+// Dual oscilloscope — uses WAVE_HELP
 const FS_OSCDUAL = `
 precision mediump float; varying vec2 vUV;
-uniform sampler2D uWaveTex; uniform float uWaveN;
+${WAVE_HELP}
 uniform float uTime,uBeat,uMid,uImpact;
-float wave(float x){ float i=floor(clamp(x,0.999)*uWaveN); float u=(i+0.5)/uWaveN; return texture2D(uWaveTex, vec2(u,0.5)).r; }
 void main(){
-  float y = 1.0 - wave(vUV.x);
-  float x = wave(vUV.y);
+  float y = 1.0 - waveSample(vUV.x);
+  float x = waveSample(vUV.y);
   float thickness = 0.011 + 0.012*uImpact;
   float lineY = smoothstep(thickness, 0.0, abs(vUV.y - y)-0.001);
   float lineX = smoothstep(thickness, 0.0, abs(vUV.x - x)-0.001);
@@ -551,18 +563,16 @@ void main(){
 }
 `;
 
-// Sunburst
+// Sunburst — uses SPEC_HELP
 const FS_SUNBURST = `
 precision mediump float; varying vec2 vUV;
-uniform sampler2D uSpecTex; uniform float uSpecN;
+${SPEC_HELP}
 uniform float uTime,uBeat,uHat,uMid,uImpact;
-float spec(float i){ float u=(i+0.5)/uSpecN; return texture2D(uSpecTex, vec2(u,0.5)).r; }
 void main(){
   vec2 p=vUV*2.0-1.0; float r=length(p)+1e-5; float a=atan(p.y,p.x);
   float seg = 10.0 + floor(uHat*14.0) + 4.0*uImpact;
   float rays = abs(sin(a*seg + uTime*2.0))*pow(1.0-r,0.4);
-  float idx = fract((a+3.14159)/6.28318)*uSpecN;
-  float s = spec(floor(idx));
+  float s = specSample(fract((a+3.14159)/6.28318));
   vec3 col = mix(vec3(1.0,0.6,0.2), vec3(0.2,0.8,1.0), s);
   col *= 0.35 + 2.5 * rays * (0.3 + 1.6*s + 0.7*uMid + 0.6*uImpact);
   col += uBeat*0.2;
@@ -570,16 +580,15 @@ void main(){
 }
 `;
 
-// Lissajous
+// Lissajous — uses WAVE_HELP
 const FS_LISSAJOUS = `
 precision mediump float; varying vec2 vUV;
-uniform sampler2D uWaveTex; uniform float uWaveN;
+${WAVE_HELP}
 uniform float uTime,uBeat,uAir,uImpact;
-float wave(float x){ float i=floor(clamp(x,0.999)*uWaveN); float u=(i+0.5)/uWaveN; return texture2D(uWaveTex, vec2(u,0.5)).r; }
 void main(){
   vec2 uv=vUV*2.0-1.0;
-  float a=wave(fract((uv.x+1.0)*0.5));
-  float b=wave(fract((uv.y+1.0)*0.5));
+  float a=waveSample(fract((uv.x+1.0)*0.5));
+  float b=waveSample(fract((uv.y+1.0)*0.5));
   float d = length(uv - vec2(2.0*a-1.0, 2.0*b-1.0));
   float line = smoothstep(0.018+0.01*uImpact, 0.0, d-0.002);
   vec3 col = mix(vec3(0.1,0.8,1.0), vec3(1.0,0.6,0.9), a*b);
@@ -588,15 +597,14 @@ void main(){
 }
 `;
 
-// Tunnel
+// Tunnel — uses SPEC_HELP
 const FS_TUNNEL = `
 precision mediump float; varying vec2 vUV;
-uniform sampler2D uSpecTex; uniform float uSpecN;
+${SPEC_HELP}
 uniform float uTime,uKick,uSnare,uHat,uLow,uMid,uAir,uBeat,uImpact;
-float spec(float i){ float u=(i+0.5)/uSpecN; return texture2D(uSpecTex, vec2(u,0.5)).r; }
 void main(){
   vec2 uv=vUV*2.0-1.0; float r=length(uv); float a=atan(uv.y,uv.x);
-  float s = spec(fract((a+3.14159)/6.28318)*uSpecN);
+  float s = specSample(fract((a+3.14159)/6.28318));
   float z = 1.2/(r+0.12 + 0.25*exp(-r*6.0)*(0.6+1.8*uKick+0.8*uImpact));
   float stripes = sin( (z*8.0 + uTime*2.2) + a*4.0 + (uHat+0.5*uImpact)*10.0 )*0.5+0.5;
   vec3 col = mix(vec3(0.1,0.5,1.2), vec3(1.0,0.4,0.8), stripes);
@@ -606,7 +614,7 @@ void main(){
 }
 `;
 
-// Particles (procedural)
+// Particles
 const FS_PARTICLES = `
 precision mediump float; varying vec2 vUV;
 uniform float uTime,uLow,uMid,uAir,uBeat,uImpact;
@@ -624,7 +632,7 @@ void main(){
 }
 `;
 
-// WOW (with safe clamp)
+// WOW (uses qclamp helper)
 const FS_WOW = `
 precision mediump float; varying vec2 vUV;
 uniform sampler2D uFeedback, uStreamTex;
@@ -653,15 +661,7 @@ void main(){
 }
 `;
 
-/* ========================= Transition Shader (safe clamp) =========================
-   uType:
-   0 = cross-zoom + swirl
-   1 = radial ripple morph
-   2 = checker spin-wipe
-   3 = flow-field luminance warp
-   4 = barrel (from) → spiral (to)
-   5 = chroma-blur + pixel-sort-style reveal
-*/
+/* ========================= Transition Shader ========================= */
 const FS_TRANSITION = `
 precision mediump float; varying vec2 vUV;
 uniform sampler2D uFrom, uTo;
