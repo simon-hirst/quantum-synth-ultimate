@@ -25,13 +25,13 @@ import (
 )
 
 type ShaderParams struct {
-	Type       string         `json:"type"`
-	Name       string         `json:"name"`
-	Code       string         `json:"code"`
-	Complexity int            `json:"complexity"`
-	Version    string         `json:"version"`
-	Uniforms   []UniformMeta  `json:"uniforms,omitempty"`
-	Textures   []TextureMeta  `json:"textures,omitempty"`
+	Type       string        `json:"type"`
+	Name       string        `json:"name"`
+	Code       string        `json:"code"`
+	Complexity int           `json:"complexity"`
+	Version    string        `json:"version"`
+	Uniforms   []UniformMeta `json:"uniforms,omitempty"`
+	Textures   []TextureMeta `json:"textures,omitempty"`
 }
 
 type UniformMeta struct {
@@ -94,7 +94,10 @@ func jsonOK(w http.ResponseWriter) {
 }
 
 func getNextShader(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "OPTIONS" { optionsHandler(w, r); return }
+	if r.Method == "OPTIONS" {
+		optionsHandler(w, r)
+		return
+	}
 
 	// Build textures
 	flowW, flowH := 256, 256
@@ -140,7 +143,10 @@ func getNextShader(w http.ResponseWriter, r *http.Request) {
 }
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "OPTIONS" { optionsHandler(w, r); return }
+	if r.Method == "OPTIONS" {
+		optionsHandler(w, r)
+		return
+	}
 	jsonOK(w)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
@@ -152,7 +158,7 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 /* ───────────────────────────── WebSocket stream ───────────────────────────── */
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024, WriteBufferSize: 1024,
+	ReadBufferSize: 1024, WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool { return true }, // ACA ingress handles fronting
 }
 
@@ -166,7 +172,10 @@ type subMsg struct {
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
-	if err != nil { log.Println("ws upgrade:", err); return }
+	if err != nil {
+		log.Println("ws upgrade:", err)
+		return
+	}
 	defer c.Close()
 
 	var wdt, hgt, fps int = 256, 256, 24
@@ -178,9 +187,15 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		var m subMsg
 		if json.Unmarshal(data, &m) == nil && m.Type == "subscribe" {
-			if m.W > 0 { wdt = m.W }
-			if m.H > 0 { hgt = m.H }
-			if m.FPS > 0 { fps = m.FPS }
+			if m.W > 0 {
+				wdt = m.W
+			}
+			if m.H > 0 {
+				hgt = m.H
+			}
+			if m.FPS > 0 {
+				fps = m.FPS
+			}
 		}
 	}
 	_ = c.SetReadDeadline(time.Time{}) // no further reads required
@@ -196,7 +211,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ticker.C:
 			if err := c.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second)); err != nil {
-				close(stop); return
+				close(stop)
+				return
 			}
 		}
 	}
@@ -204,9 +220,15 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 func streamWaves(conn *websocket.Conn, w, h, fps int, stop chan struct{}) {
 	// simple 2D wave equation with occasional impulses
-	if w < 16 { w = 16 }
-	if h < 16 { h = 16 }
-	if fps < 6 { fps = 6 }
+	if w < 16 {
+		w = 16
+	}
+	if h < 16 {
+		h = 16
+	}
+	if fps < 6 {
+		fps = 6
+	}
 	dt := 1.0 / float64(fps)
 	c2 := 0.25
 	alpha := 0.001 // damping
@@ -223,13 +245,13 @@ func streamWaves(conn *websocket.Conn, w, h, fps int, stop chan struct{}) {
 		u[y*w+x] = 1.0
 	}
 
-	ticker := time.NewTicker(time.Duration(float64(time.Second)*dt))
+	ticker := time.NewTicker(time.Duration(float64(time.Second) * dt))
 	defer ticker.Stop()
 
 	header := func() []byte {
 		buf := &bytes.Buffer{}
-		buf.WriteString("FRAMEv1")         // 7 bytes
-		buf.WriteByte(0x00)                 // pad to 8
+		buf.WriteString("FRAMEv1") // 7 bytes
+		buf.WriteByte(0x00)        // pad to 8
 		_ = binary.Write(buf, binary.LittleEndian, uint32(w))
 		_ = binary.Write(buf, binary.LittleEndian, uint32(h))
 		_ = binary.Write(buf, binary.LittleEndian, uint32(4)) // RGBA
@@ -265,15 +287,25 @@ func streamWaves(conn *websocket.Conn, w, h, fps int, stop chan struct{}) {
 			// normalize and pack to RGBA
 			var minV, maxV float64 = 9e9, -9e9
 			for i := 0; i < N; i++ {
-				if u[i] < minV { minV = u[i] }
-				if u[i] > maxV { maxV = u[i] }
+				if u[i] < minV {
+					minV = u[i]
+				}
+				if u[i] > maxV {
+					maxV = u[i]
+				}
 			}
 			scale := 1.0
-			if maxV-minV > 1e-6 { scale = 1.0 / (maxV - minV) }
+			if maxV-minV > 1e-6 {
+				scale = 1.0 / (maxV - minV)
+			}
 			for i := 0; i < N; i++ {
-				v := (u[i]-minV)*scale
-				if v < 0 { v = 0 }
-				if v > 1 { v = 1 }
+				v := (u[i] - minV) * scale
+				if v < 0 {
+					v = 0
+				}
+				if v > 1 {
+					v = 1
+				}
 				b := byte(v*255 + 0.5)
 				j := i * 4
 				px[j+0] = b
@@ -306,11 +338,12 @@ func makeFlowField(w, h int) *image.NRGBA {
 			px := float64(x) - cx
 			py := float64(y) - cy
 			r := math.Hypot(px, py) / rmax
+			_ = r
 			ang := math.Atan2(py, px)
 			// swirl + orbital flow with mild noise
 			spin := 1.2 + 0.8*math.Sin(2.0*ang)
-			vx := -py/rmax*spin
-			vy := px/rmax*spin
+			vx := -py / rmax * spin
+			vy := px / rmax * spin
 			// radial push on bass
 			vx += 0.15 * px / rmax
 			vy += 0.15 * py / rmax
@@ -318,7 +351,7 @@ func makeFlowField(w, h int) *image.NRGBA {
 
 			r8 := byte(((vx*0.5 + 0.5) * 255.0) + 0.5) // map [-1,1] -> [0,1]
 			g8 := byte(((vy*0.5 + 0.5) * 255.0) + 0.5)
-			b8 := byte(mag * 255.0 + 0.5)
+			b8 := byte(mag*255.0 + 0.5)
 
 			i := y*img.Stride + x*4
 			img.Pix[i+0] = r8
@@ -345,7 +378,10 @@ func newRD(w, h int) *rdField {
 		v: make([]float64, w*h),
 		w: w, h: h,
 	}
-	for i := 0; i < w*h; i++ { f.u[i] = 1.0; f.v[i] = 0.0 }
+	for i := 0; i < w*h; i++ {
+		f.u[i] = 1.0
+		f.v[i] = 0.0
+	}
 	// seeds
 	for n := 0; n < 6; n++ {
 		cx := rand.Intn(w)
@@ -377,19 +413,30 @@ func (f *rdField) step(Du, Dv, feed, kill, dt float64) {
 			// Laplacian 5-point
 			lapU := f.u[i-1] + f.u[i+1] + f.u[i-w] + f.u[i+w] - 4*u
 			lapV := f.v[i-1] + f.v[i+1] + f.v[i-w] + f.v[i+w] - 4*v
-			u2[i] = u + (Du*lapU - uvv + feed*(1.0-u)) * dt
-			v2[i] = v + (Dv*lapV + uvv - (kill+feed)*v) * dt
-			if u2[i] < 0 { u2[i] = 0 }
-			if v2[i] < 0 { v2[i] = 0 }
-			if u2[i] > 1 { u2[i] = 1 }
-			if v2[i] > 1 { v2[i] = 1 }
+			u2[i] = u + (Du*lapU-uvv+feed*(1.0-u))*dt
+			v2[i] = v + (Dv*lapV+uvv-(kill+feed)*v)*dt
+			if u2[i] < 0 {
+				u2[i] = 0
+			}
+			if v2[i] < 0 {
+				v2[i] = 0
+			}
+			if u2[i] > 1 {
+				u2[i] = 1
+			}
+			if v2[i] > 1 {
+				v2[i] = 1
+			}
 		}
 	}
 	f.u, f.v = u2, v2
 }
 
 func makeRDAtlas(w, h, frames, cols, rows int) (*image.NRGBA, int, int) {
-	if cols*rows < frames { cols = int(math.Ceil(math.Sqrt(float64(frames)))); rows = cols }
+	if cols*rows < frames {
+		cols = int(math.Ceil(math.Sqrt(float64(frames))))
+		rows = cols
+	}
 	cellW, cellH := w, h
 	aw, ah := cols*cellW, rows*cellH
 	atlas := image.NewNRGBA(image.Rect(0, 0, aw, ah))
@@ -402,7 +449,9 @@ func makeRDAtlas(w, h, frames, cols, rows int) (*image.NRGBA, int, int) {
 	f := newRD(w, h)
 	totalSteps := 1200
 	captureEvery := totalSteps / frames
-	if captureEvery < 10 { captureEvery = 10 }
+	if captureEvery < 10 {
+		captureEvery = 10
+	}
 
 	frame := 0
 	for step := 0; step < totalSteps && frame < frames; step++ {
