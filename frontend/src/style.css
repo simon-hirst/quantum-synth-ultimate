@@ -567,3 +567,21 @@ html, body, #app { height: 100%; margin: 0; padding: 0; }
   height: 100%;
   touch-action: none;
 }
+
+/* ===== QuantumSynth scaling fix (full-bleed) ===== */
+html, body, #app { height: 100%; margin: 0; padding: 0; }
+.quantum-container {
+  position: relative;
+  width: 100%;
+  height: 100vh; /* fill viewport; if embedded, parent can override via height */
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  background: radial-gradient(1200px 800px at 50% 50%, rgba(10,14,22,0.9), rgba(3,5,9,1) 60%);
+}
+.quantum-container canvas#visualizer {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
