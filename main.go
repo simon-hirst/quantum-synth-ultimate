@@ -78,7 +78,16 @@ func main() {
 	)
 
 	fmt.Printf("QuantumSynth Infinite server starting on :%s\n", port)
-	log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(router)))
+	// performance-wrapped server with gzip, caching, and timeouts
+	handler := WrapPerf(router, corsMiddleware)
+	server := &http.Server{
+		Addr:         ":" + port,
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+	log.Fatal(server.ListenAndServe())
 }
 
 func optionsHandler(w http.ResponseWriter, r *http.Request) {

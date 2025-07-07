@@ -1,98 +1,92 @@
-import './style.css'
+import './style.css';
 import { Visualizer } from './visualizer';
 
-document.addEventListener('DOMContentLoaded', async () => {
+function h<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (html) el.innerHTML = html;
+  return el;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
   const root = document.querySelector<HTMLDivElement>('#app');
   if (!root) return;
 
-  root.innerHTML = `
-    <div class="qs-shell">
-      <aside class="qs-panel glass">
-        <h1 class="qs-title">QuantumSynth</h1>
-        <p class="qs-sub">Neural Edition</p>
-        <div class="qs-divider"></div>
-
-        <div class="qs-kv">
-          <div id="status" class="qs-status">Ready</div>
-          <div id="fps" class="qs-fps">FPS: 0</div>
-        </div>
-
-        <div class="qs-actions">
-          <button id="btnShare" class="btn btn-primary">Start Screen Sharing</button>
-          <button id="btnDemo" class="btn btn-ghost">Demo Mode</button>
-        </div>
-
-        <h2 class="qs-h2">Setup</h2>
-        <ol class="qs-list">
-          <li>Use Chrome or Edge for best results</li>
-          <li>When prompted, tick <b>“Share audio”</b></li>
-          <li>Select the tab/window you want visualised</li>
-          <li>Press <b>N</b> to load next server shader</li>
-        </ol>
-
-        <div class="qs-footer">
-          built by <a href="https://github.com/simon-hirst" target="_blank" rel="noopener">https://github.com/simon-hirst</a>
-        </div>
-      </aside>
-
-      <main class="qs-stage">
-        <canvas id="visualizer" class="qs-canvas"></canvas>
-      </main>
+  const shell = h('div', 'qs-shell');
+  const side  = h('aside', 'qs-side');
+  const main  = h('main', 'qs-main');
+  const header = `
+    <div class="brand">
+      <div class="dot"></div>
+      <div class="title">QuantumSynth</div>
+      <div class="subtitle">Neural Edition</div>
     </div>
   `;
 
-  const canvas  = document.getElementById('visualizer') as HTMLCanvasElement | null;
+  const tips = `
+    <div class="section-title">Setup</div>
+    <ol class="setup">
+      <li>Use <b>Chrome</b> or <b>Edge</b> for best results</li>
+      <li><b>Best compatibility:</b> choose <b>Entire Screen</b> and tick <b>Share audio</b> (DRM tabs often block audio)</li>
+      <li>Select the tab/window you want visualised</li>
+      <li>Press <b>M</b> (or 1–0) to switch visualisations</li>
+    </ol>
+    <div class="built-by">built by <a href="https://github.com/simon-hirst" target="_blank" rel="noreferrer">github.com/simon-hirst</a></div>
+  `;
+
+  side.innerHTML = `
+    ${header}
+    <div class="controls">
+      <button id="btnStart" class="btn primary">Start Screen Sharing</button>
+      <button id="btnStop"  class="btn">Stop</button>
+      <button id="btnDemo"  class="btn ghost">Demo Mode</button>
+      <div class="status" id="status">Ready</div>
+    </div>
+    ${tips}
+  `;
+
+  const canvas = h('canvas', 'qs-canvas') as HTMLCanvasElement;
+  canvas.id = 'visualizer';
+  main.appendChild(canvas);
+
+  shell.appendChild(side);
+  shell.appendChild(main);
+  root.innerHTML = '';
+  root.appendChild(shell);
+
+  const viz = new Visualizer(canvas);
   const statusEl = document.getElementById('status')!;
-  const fpsEl    = document.getElementById('fps')!;
-  const btnShare = document.getElementById('btnShare') as HTMLButtonElement;
-  const btnDemo  = document.getElementById('btnDemo') as HTMLButtonElement;
-  if (!canvas) return;
 
-  const viz = new Visualizer(canvas, {
-    onStatus: (s) => { statusEl.textContent = s; },
-    onFps: (f) => { fpsEl.textContent = `FPS: ${f}`; },
-  });
+  const btnStart = document.getElementById('btnStart') as HTMLButtonElement;
+  const btnStop  = document.getElementById('btnStop')  as HTMLButtonElement;
+  const btnDemo  = document.getElementById('btnDemo')  as HTMLButtonElement;
 
-  await viz.start(); // loads server shader and starts render loop
-
-  const updateShareButton = () => {
-    btnShare.textContent = viz.isSharing() ? 'Stop Screen Sharing' : 'Start Screen Sharing';
-  };
-  updateShareButton();
-
-  btnShare.addEventListener('click', async () => {
-    if (viz.isSharing()) {
-      viz.stopScreenShare();
-      statusEl.textContent = 'Screen share stopped';
-      updateShareButton();
-      return;
-    }
-
-    btnShare.disabled = true;
-    statusEl.textContent = 'Requesting screen share (enable "Share audio")…';
+  btnStart.onclick = async () => {
+    statusEl.textContent = 'Requesting screen share…';
     try {
       await viz.startScreenShare();
-      statusEl.textContent = 'Screen sharing active';
-    } catch {
-      statusEl.textContent = 'Permission denied or no audio shared';
-    } finally {
-      btnShare.disabled = false;
-      updateShareButton();
+      statusEl.textContent = 'Screen sharing active ✓ — Best compatibility: choose “Entire Screen” + “Share audio”';
+    } catch (e:any) {
+      console.error(e);
+      statusEl.textContent = 'Screen share failed. Tip: select “Entire Screen” and enable “Share audio”';
     }
-  });
+  };
 
-  let demo = false;
-  btnDemo.addEventListener('click', () => {
-    demo = !demo;
-    viz.setDemoMode(demo);
-    btnDemo.textContent = demo ? 'Stop Demo' : 'Demo Mode';
-    statusEl.textContent = demo ? 'Demo mode active' : 'Ready';
-  });
+  btnStop.onclick = () => {
+    viz.stopScreenShare();
+    statusEl.textContent = 'Stopped';
+  };
 
-  // Hotkey for next server shader
-  document.addEventListener('keydown', (e) => {
-    if (e.key.toLowerCase() === 'n') {
-      (viz as any).loadServerShader?.();
-    }
+  btnDemo.onclick = () => {
+    viz.setDemoMode(true);
+    statusEl.textContent = 'Demo mode active';
+  };
+
+  // Resize the canvas container when window changes
+  const ro = new ResizeObserver(() => {
+    const w = main.clientWidth, h = main.clientHeight;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
   });
+  ro.observe(main);
 });
