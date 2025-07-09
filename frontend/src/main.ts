@@ -15,15 +15,20 @@ document.addEventListener('DOMContentLoaded', () => {
   const shell = h('div', 'qs-shell');
   const side  = h('aside', 'qs-side');
   const main  = h('main', 'qs-main');
-  const header = `
+
+  side.innerHTML = `
     <div class="brand">
       <div class="dot"></div>
       <div class="title">QuantumSynth</div>
       <div class="subtitle">Neural Edition</div>
     </div>
-  `;
-
-  const tips = `
+    <div class="controls">
+      <button id="btnStart" class="btn primary">Start Screen Sharing</button>
+      <button id="btnStop"  class="btn">Stop</button>
+      <button id="btnDemo"  class="btn ghost">Demo Mode</button>
+      <button id="btnPause" class="btn ghost">Pause rotation (P)</button>
+      <div class="status" id="status">Ready</div>
+    </div>
     <div class="section-title">Setup</div>
     <ol class="setup">
       <li>Use <b>Chrome</b> or <b>Edge</b> for best results</li>
@@ -32,17 +37,6 @@ document.addEventListener('DOMContentLoaded', () => {
       <li>Press <b>M</b> (or 1–0) to switch visualisations</li>
     </ol>
     <div class="built-by">built by <a href="https://github.com/simon-hirst" target="_blank" rel="noreferrer">github.com/simon-hirst</a></div>
-  `;
-
-  side.innerHTML = `
-    ${header}
-    <div class="controls">
-      <button id="btnStart" class="btn primary">Start Screen Sharing</button>
-      <button id="btnStop"  class="btn">Stop</button>
-      <button id="btnDemo"  class="btn ghost">Demo Mode</button>
-      <div class="status" id="status">Ready</div>
-    </div>
-    ${tips}
   `;
 
   const canvas = h('canvas', 'qs-canvas') as HTMLCanvasElement;
@@ -55,11 +49,15 @@ document.addEventListener('DOMContentLoaded', () => {
   root.appendChild(shell);
 
   const viz = new Visualizer(canvas);
-  const statusEl = document.getElementById('status')!;
-
+  const statusEl = document.getElementById('status') as HTMLDivElement;
   const btnStart = document.getElementById('btnStart') as HTMLButtonElement;
   const btnStop  = document.getElementById('btnStop')  as HTMLButtonElement;
   const btnDemo  = document.getElementById('btnDemo')  as HTMLButtonElement;
+  const btnPause = document.getElementById('btnPause') as HTMLButtonElement;
+
+  const setPauseLabel = () => {
+    btnPause.textContent = viz.isPaused() ? 'Resume rotation (P)' : 'Pause rotation (P)';
+  };
 
   btnStart.onclick = async () => {
     statusEl.textContent = 'Requesting screen share…';
@@ -71,22 +69,21 @@ document.addEventListener('DOMContentLoaded', () => {
       statusEl.textContent = 'Screen share failed. Tip: select “Entire Screen” and enable “Share audio”';
     }
   };
+  btnStop.onclick = () => { viz.stopScreenShare(); statusEl.textContent = 'Stopped'; };
+  btnDemo.onclick = () => { viz.setDemoMode(true); statusEl.textContent = 'Demo mode active'; };
+  btnPause.onclick = () => { viz.togglePause(); setPauseLabel(); };
 
-  btnStop.onclick = () => {
-    viz.stopScreenShare();
-    statusEl.textContent = 'Stopped';
-  };
+  window.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'p') { viz.togglePause(); setPauseLabel(); }
+  });
 
-  btnDemo.onclick = () => {
-    viz.setDemoMode(true);
-    statusEl.textContent = 'Demo mode active';
-  };
-
-  // Resize the canvas container when window changes
+  // Keep the canvas sized to its container
   const ro = new ResizeObserver(() => {
     const w = main.clientWidth, h = main.clientHeight;
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
   });
   ro.observe(main);
+
+  setPauseLabel();
 });
