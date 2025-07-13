@@ -266,14 +266,17 @@ export class Visualizer {
 
   // timing
   private anim?: number; private lastFPS=performance.now(); private frames=0;
-  private sceneStart=performance.now(); private minMs=16000; private maxMs=28000;
-  private transitioning=false; private transStart=0; private transDur=1500;
+  private sceneStart=performance.now(); private minMs=30000; private maxMs=50000;
+  
+  private rotateAt = performance.now();private transitioning=false; private transStart=0; private transDur=1500;
   private rotatePaused=false;
 
   // watchdog
   private deadFrames=0;
 
-  constructor(canvas: HTMLCanvasElement){
+  private pickRotateDelay(){ return this.minMs + Math.random()*(this.maxMs - this.minMs); }
+
+constructor(canvas: HTMLCanvasElement){
     this.canvas=canvas;
     const gl = (canvas.getContext('webgl') as GL) || (canvas.getContext('webgl2') as GL);
     if(!gl){ throw new Error('WebGL unsupported'); }
@@ -306,7 +309,10 @@ export class Visualizer {
     new ResizeObserver(()=>this.resize()).observe(this.canvas.parentElement || document.body);
     this.resize();
 
-    // keys
+    
+    // schedule first auto-rotation
+    this.rotateAt = performance.now() + this.pickRotateDelay();
+// keys
     window.addEventListener('keydown',(e)=>{
       const k=e.key.toLowerCase();
       if(k==='m') this.nextScene();
@@ -392,7 +398,7 @@ export class Visualizer {
     // rotation timing
     const elapsed = now - this.sceneStart;
     const scene = this.scenes[this.idx];
-    if(!this.transitioning && !this.rotatePaused && elapsed > (this.minMs + Math.random()*(this.maxMs-this.minMs))){
+    if(!this.transitioning && !this.rotatePaused && now >= this.rotateAt){
       this.nextScene();
     }
 
@@ -409,7 +415,8 @@ export class Visualizer {
       gl.uniform1f(u('uBeat')!,beat); gl.uniform1f(u('uImpact')!,impact); gl.uniform3f(u('uBands')!,low,mid,air);
       const a=gl.getAttribLocation(this.morphProg,'aPos'); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
       gl.drawArrays(gl.TRIANGLES,0,6);
-      if(p>=1){ this.transitioning=false; this.sceneStart=performance.now(); this.deadFrames=0; }
+      if(p>=1){ this.transitioning=false; this.sceneStart=performance.now(); this.deadFrames=0; 
+      this.rotateAt = performance.now() + this.pickRotateDelay(); }
     } else {
       this.drawToScreen(scene, t, {level,low,mid,air,beat,impact,kick,snare,hat});
       // Dead-frame watchdog
