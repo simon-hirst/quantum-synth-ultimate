@@ -1,0 +1,15 @@
+# === QuantumSynth temp/backups ===
+*.bak
+*.bak.*
+*.tmp
+*.log
+.hold_patch.js
+.boost_reactivity.js
+.patch_rotate.js
+fix_scene_rotation_duration.sh
+viz_hold_and_gitignore.sh
+
+# Node/OS cruft
+frontend/node_modules/
+.DS_Store
+Thumbs.db

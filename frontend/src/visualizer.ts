@@ -266,7 +266,7 @@ export class Visualizer {
 
   // timing
   private anim?: number; private lastFPS=performance.now(); private frames=0;
-  private sceneStart=performance.now(); private minMs=30000; private maxMs=50000;
+  private sceneStart=performance.now(); private minMs=45000; private maxMs=75000;
   
   private rotateAt = performance.now();private transitioning=false; private transStart=0; private transDur=1500;
   private rotatePaused=false;
@@ -416,7 +416,10 @@ constructor(canvas: HTMLCanvasElement){
       const a=gl.getAttribLocation(this.morphProg,'aPos'); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
       gl.drawArrays(gl.TRIANGLES,0,6);
       if(p>=1){ this.transitioning=false; this.sceneStart=performance.now(); this.deadFrames=0; 
-      this.rotateAt = performance.now() + this.pickRotateDelay(); }
+      this.rotateAt = performance.now() + this.pickRotateDelay(); 
+      const __now = performance.now();
+      this.holdUntil = __now + 20000;
+      this.rotateAt  = __now + this.pickRotateDelay(); }
     } else {
       this.drawToScreen(scene, t, {level,low,mid,air,beat,impact,kick,snare,hat});
       // Dead-frame watchdog
