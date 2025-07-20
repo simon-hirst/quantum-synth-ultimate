@@ -142,23 +142,26 @@ void main(){
 
 /* 6) Particles burst (beat explosions) */
 const FS_PARTICLESBURST = `
-${PRELUDE}
+${PRELUDE}${SPEC_HELP}${WAVE_HELP}
 uniform float uTime,uLow,uMid,uAir,uImpact,uBeat;
-float n21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }
-float fbm(vec2 p){
-  float a=0.5,f=1.0,sum=0.0;
-  for(int i=0;i<5;i++){ sum+=a*n21(p*f); f*=2.02; a*=0.5; }
-  return sum;
-}
+float hash21(vec2 p){ return fract(sin(dot(p, vec2(27.1, 91.7)))*43758.5453); }
 void main(){
-  vec2 uv=vUV; vec2 p=toAspect(uv);
-  float field = fbm(p*6.0 + uTime*vec2(0.8,-0.6));
-  float thresh = 0.78 - 0.35*uBeat - 0.25*uImpact - 0.2*uLow;
-  float spark = step(thresh, field);
-  float glow = exp(-dot(p,p)*(5.0 + 6.0*uMid + 3.0*uImpact));
-  vec3 col = mix(vec3(0.2,0.9,1.0), vec3(1.0,0.5,0.9), field);
-  col = col*(spark*(0.6+1.4*uAir+0.8*uImpact) + glow);
-  gl_FragColor=vec4(col,1.0);
+  vec2 p=toAspect(vUV);
+  float energy = clamp(uLow*1.2 + uMid*0.9 + uAir*0.8 + uImpact*1.6 + uBeat*1.2, 0.0, 1.0);
+  float scale = mix(10.0, 28.0, energy);
+  vec2 gp = p*scale + vec2(uTime*(0.20+0.30*uAir), uTime*(0.17+0.25*uImpact));
+  vec2 cell = floor(gp);
+  vec2 f = fract(gp)-0.5;
+  float rnd = hash21(cell);
+  float ph = rnd*6.2831 + uTime*(0.5 + 2.0*uBeat + 1.4*uImpact);
+  float d = length(f + 0.25*vec2(cos(ph), sin(ph)));
+  float dotGlow = smoothstep(0.16 + 0.25*(1.0 - clamp(uLow,0.0,1.0)), 0.0, d);
+  float pulse = (0.35+0.65*uBeat) + 1.3*uImpact + 0.8*uLow;
+  vec3 base = mix(vec3(0.15,0.95,1.0), vec3(1.0,0.5,0.95), rnd);
+  vec3 col = base * dotGlow * (0.35 + 2.3*pulse);
+  float vig = exp(-dot(p,p)*(1.2 + 3.0*(uLow+uMid)));
+  col *= vig;
+  gl_FragColor = vec4(col,1.0);
 }
 `;
 
@@ -266,7 +269,7 @@ export class Visualizer {
 
   // timing
   private anim?: number; private lastFPS=performance.now(); private frames=0;
-  private sceneStart=performance.now(); private minMs=45000; private maxMs=75000;
+  private sceneStart=performance.now(); private minMs=50000; private maxMs=90000;
   
   private rotateAt = performance.now();private transitioning=false; private transStart=0; private transDur=1500;
   private rotatePaused=false;
