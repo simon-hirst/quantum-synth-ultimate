@@ -248,6 +248,8 @@ void main(){
 
 /* ===== Visualizer class ===== */
 export class Visualizer {
+  private rotatePausedUntil:number = 0;
+  private lastModeAt:number = performance.now();
   private canvas: HTMLCanvasElement;
   private gl: GL;
   private quad: WebGLBuffer;
@@ -331,7 +333,7 @@ constructor(canvas: HTMLCanvasElement){
 
   /* public controls */
   isPaused(){ return this.rotatePaused; }
-  togglePause(){ this.rotatePaused=!this.rotatePaused; if(!this.anim) this.loop(); }
+  togglePause(){ this.rotatePaused=!(this.rotatePaused || (performance.now() < this.rotatePausedUntil)); if(!this.anim) this.loop(); }
 
   private mkTex(w:number,h:number){ const gl=this.gl; const t=gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D,t); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; }
   private mkFB(t:WebGLTexture){ const gl=this.gl; const f=gl.createFramebuffer()!; gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0); gl.bindFramebuffer(gl.FRAMEBUFFER,null); return f; }
@@ -401,7 +403,7 @@ constructor(canvas: HTMLCanvasElement){
     // rotation timing
     const elapsed = now - this.sceneStart;
     const scene = this.scenes[this.idx];
-    if(!this.transitioning && !this.rotatePaused && now >= this.rotateAt){
+    if(!this.transitioning && !(this.rotatePaused || (performance.now() < this.rotatePausedUntil)) && now >= this.rotateAt){
       this.nextScene();
     }
 
@@ -420,9 +422,13 @@ constructor(canvas: HTMLCanvasElement){
       gl.drawArrays(gl.TRIANGLES,0,6);
       if(p>=1){ this.transitioning=false; this.sceneStart=performance.now(); this.deadFrames=0; 
       this.rotateAt = performance.now() + this.pickRotateDelay(); 
-      const __now = performance.now();
-      this.holdUntil = __now + 20000;
-      this.rotateAt  = __now + this.pickRotateDelay(); }
+/* inlined now (decl removed) */
+      this.holdUntil = performance.now() + 20000;
+      this.rotateAt = performance.now() + this.pickRotateDelay(); 
+/* inlined now (decl removed) */
+      this.lastModeAt = performance.now();
+      this.rotatePausedUntil = performance.now() + 25000;
+      this.rotateAt = performance.now() + this.pickRotateDelay(); }
     } else {
       this.drawToScreen(scene, t, {level,low,mid,air,beat,impact,kick,snare,hat});
       // Dead-frame watchdog
