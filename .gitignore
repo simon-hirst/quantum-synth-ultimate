@@ -13,3 +13,9 @@ viz_hold_and_gitignore.sh
 frontend/node_modules/
 .DS_Store
 Thumbs.db
+# QuantumSynth ignores
+.purge_*.js
+.kill_boring.js
+.purge_and_lock.js
+.inline_now.js
+.DS_Store

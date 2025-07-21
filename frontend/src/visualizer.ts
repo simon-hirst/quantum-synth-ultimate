@@ -248,6 +248,17 @@ void main(){
 
 /* ===== Visualizer class ===== */
 export class Visualizer {
+
+// Auto-injected: prevent selection of "boring" presets still lurking anywhere
+private blacklistBoringPresets(name:string, fragId:string):boolean{
+  const n = (name||'').toLowerCase();
+  const f = (fragId||'').toLowerCase();
+  const badName = /ring|concentric|bullseye|ripple|circle|glow|bloom|sun|halo|orb|radial/.test(n);
+  const badFrag = /fs_ring|fs_rings|fs_concentric|fs_bullseye|fs_ripple|fs_glow|fs_bloom|fs_radial|fs_sun|fs_halo|fs_orb/.test(f);
+  return badName || badFrag;
+}
+
+
   private rotatePausedUntil:number = 0;
   private lastModeAt:number = performance.now();
   private canvas: HTMLCanvasElement;
