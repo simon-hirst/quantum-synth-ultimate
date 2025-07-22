@@ -22,7 +22,11 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"compress/gzip"
+	"strings"
 )
+	"compress/gzip"
+	"strings"
 
 type ShaderParams struct {
 	Type       string        `json:"type"`
@@ -67,8 +71,11 @@ func main() {
 	router.HandleFunc("/ws", wsHandler).Methods("GET")
 
 	// Serve frontend
-	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./frontend/dist/")))
-
+	// Serve frontend with proper caching
+	fs := http.Dir("./frontend/dist")
+	static := http.FileServer(fs)
+	router.PathPrefix("/assets/").Handler(withStaticCache(static))
+	router.PathPrefix("/").Handler(withStaticCache(static))
 	// CORS
 	corsMiddleware := handlers.CORS(
 		handlers.AllowedOrigins([]string{"*"}),
@@ -338,7 +345,7 @@ func makeFlowField(w, h int) *image.NRGBA {
 			px := float64(x) - cx
 			py := float64(y) - cy
 			r := math.Hypot(px, py) / rmax
-			r = 1.0 - r
+			_ = r
 			ang := math.Atan2(py, px)
 			// swirl + orbital flow with mild noise
 			spin := 1.2 + 0.8*math.Sin(2.0*ang)
@@ -556,4 +563,25 @@ void main(){
   gl_FragColor = vec4(col, 1.0);
 }
 `
+}
+
+// withStaticCache sets aggressive caching for versioned assets (Vite /assets/*) and
+// disables caching for HTML to ensure hot updates are visible.
+func withStaticCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		// Long cache for hashed assets
+		if strings.HasPrefix(p, "/assets/") ||
+			strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".css") ||
+			strings.HasSuffix(p, ".png") || strings.HasSuffix(p, ".jpg") ||
+			strings.HasSuffix(p, ".jpeg")|| strings.HasSuffix(p, ".webp") ||
+			strings.HasSuffix(p, ".woff2")|| strings.HasSuffix(p, ".woff") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		// No-store for HTML documents
+		if p == "/" || strings.HasSuffix(p, "/") || strings.HasSuffix(p, ".html") {
+			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		}
+		next.ServeHTTP(w, r)
+	})
 }

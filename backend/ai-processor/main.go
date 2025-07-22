@@ -112,7 +112,7 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 
 	router := mux.NewRouter()
-	
+
 	router.HandleFunc("/ws", handleProcess).Methods("GET")
 	router.HandleFunc("/health", handleHealth).Methods("GET")
 

@@ -77,8 +77,7 @@ const lastUtcMs = Date.parse(lastIso);
 const lastLocalMs = lastUtcMs + off.minutes*60*1000;
 const lastLocal = new Date(lastLocalMs);
 
-// Decide same-day (75%) vs +1..7 days (25%)
-const sameDay = Math.random() < 0.75;
+const sameDay = Math.random() < 0.5;
 
 // Start/end of day (same tz as last commit)
 const sod = new Date(lastLocal); sod.setHours(0,0,0,0);

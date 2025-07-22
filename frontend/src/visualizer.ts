@@ -59,9 +59,17 @@ float waveSample(float x){
   return texture2D(uWaveTex, vec2(u,0.5)).r;
 }
 `;
+// Block any “rings” / “radial glow” style presets from ever entering rotation
+const BANNED_PRESET_REGEX = /(^|[^a-z])(ring(s)?|concentric|radial(\s*glow)?)([^a-z]|$)/i;
 
-/* ========================= Classic scenes (aspect-correct) ========================= */
+// Rotation timing (fixes “skips after a second”)
+const MIN_MODE_HOLD_MS = 42000;   // stay at least this long
+const MODE_JITTER_MS    = 18000;  // random extra hold
 
+
+/* ===== PUNCHY SCENES ===== */
+
+/* 1) Pro bars (kept), hotter glow */
 const FS_BARSPRO = `
 ${PRELUDE}
 ${SPEC_HELP}
@@ -448,31 +456,48 @@ export class Visualizer {
     this.texSceneB=this.mkTex(2,2); this.sceneB=this.mkFB(this.texSceneB);
 
     // compile scenes
-    const progs: Record<string,string> = {
-      barsPro:FS_BARSPRO, centerBars:FS_CENTERBARS, circleSpectrum:FS_CIRCLESPEC, waveformLine:FS_WAVEFORMLINE,
-      radialRings:FS_RADIALRINGS, oscDual:FS_OSCDUAL, sunburst:FS_SUNBURST, lissajous:FS_LISSAJOUS,
-      tunnel:FS_TUNNEL, particles:FS_PARTICLES, starfield:FS_STARFIELD
+    const sources: Record<string,string> = {
+      barsPro:FS_BARSPRO, starburst:FS_STARBURST, shockwave:FS_SHOCKWAVE,
+      neonVoronoi:FS_NEONVORONOI, cityBars:FS_CITYBARS, particlesBurst:FS_PARTICLESBURST,
+      flowfieldNeon:FS_FLOWNEON, waveformLine:FS_WAVEFORMLINE
     };
-    Object.entries(progs).forEach(([k,src])=>{ this.sceneProg[k]=this.safeLink(k,src); });
-    this.wowProg   = this.safeLink('wow', FS_WOW);
-    this.morphProg = this.safeLink('morph', FS_MORPH);
-
-    for (const p of Object.values({...this.sceneProg, wow:this.wowProg, morph:this.morphProg})) {
-      if (!p) continue;
-      gl.useProgram(p);
-      const loc=gl.getAttribLocation(p,'aPos'); if(loc!==-1){ gl.bindBuffer(gl.ARRAY_BUFFER,this.quad!); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0); }
+    for(const [k,src] of Object.entries(sources)){
+      try{ const p=this.link(VS,src); this.progs[k]=p; const loc=gl.getAttribLocation(p,'aPos'); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0); }
+      catch(e){ console.error('[Shader fail]',k,e); this.progs[k]=null; }
     }
+    this.morphProg=this.link(VS,FS_MORPH); { const loc=gl.getAttribLocation(this.morphProg,'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0); }
 
-    // default WS field texture
-    this.streamTex = gl.createTexture()!;
-    gl.activeTexture(gl.TEXTURE0 + this.streamUnit);
-    gl.bindTexture(gl.TEXTURE_2D, this.streamTex);
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255]));
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+    // sizing
+    new ResizeObserver(()=>this.resize()).observe(this.canvas.parentElement || document.body);
+    this.resize();
 
-    window.addEventListener('keydown',(e)=>this.onKey(e));
+    
+    // schedule first auto-rotation
+    this.rotateAt = this.holdUntil;
+// keys
+    window.addEventListener('keydown',(e)=>{
+      const k=e.key.toLowerCase();
+      if(k==='m') this.nextScene();
+      if(k==='p'){ this.togglePause(); }
+      const list=this.scenes as readonly string[];
+      if('1234567890'.includes(k)){
+        let idx = (k==='0') ? list.length-1 : parseInt(k,10)-1;
+        idx = Math.max(0, Math.min(list.length-1, idx));
+        if(list[idx]){ this.idx=idx; this.beginTransition(true); }
+      }
+    });
   }
+
+  /* public controls */
+  isPaused(){ return this.rotatePaused; }
+  togglePause(){ this.rotatePaused=!(this.rotatePaused || (performance.now() < this.rotatePausedUntil)); if(!this.anim) this.loop(); }
+
+  private mkTex(w:number,h:number){ const gl=this.gl; const t=gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D,t); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; }
+  private mkFB(t:WebGLTexture){ const gl=this.gl; const f=gl.createFramebuffer()!; gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0); gl.bindFramebuffer(gl.FRAMEBUFFER,null); return f; }
+  private mkAudioTex(w:number){ const gl=this.gl; const t=gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D,t); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,1,0,gl.RGBA,gl.UNSIGNED_BYTE,null); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; }
+
+  private compile(type:number,src:string){ const gl=this.gl; const s=gl.createShader(type)!; gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)||'compile'); return s; }
+  private link(vs:string, fs:string){ const gl=this.gl; const p=gl.createProgram()!; gl.attachShader(p,this.compile(gl.VERTEX_SHADER,vs)); gl.attachShader(p,this.compile(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)||'link'); return p; }
 
   private resize(){
     const gl=this.gl!; const dpr=Math.max(1,Math.round(window.devicePixelRatio||1));
@@ -603,49 +628,63 @@ export class Visualizer {
     if (this.analyser && this.freq && this.wave) {
       this.analyser.getByteFrequencyData(this.freq);
       this.analyser.getByteTimeDomainData(this.wave);
-      const N=this.freq.length; const mag=new Float32Array(N);
-      for (let i=0;i<N;i++) mag[i]=this.freq[i]/255;
-      let sum=0; for (let i=0;i<N;i++) sum+=mag[i]*mag[i];
-      let rms=Math.sqrt(sum/N);
-      const gainErr = 0.50 / Math.max(1e-4, rms);
-      const rate = (gainErr>1 ? 0.12 : 0.03);
-      this.agcGain += (gainErr - this.agcGain) * rate;
-      rms = Math.min(3.0, rms * this.agcGain);
-      if(rms>this.env) this.env+= (rms-this.env)*0.52; else this.env+= (rms-this.env)*0.10;
-      level=this.env;
-      // …bands/beat/impact same as before…
+      const N=this.freq.length; let sum=0;
+      for(let i=0;i<N;i++){ const v=this.freq[i]/255; sum+=v*v; if(i<N*0.2) low+=v; else if(i<N*0.7) mid+=v; else air+=v; }
+      low/=Math.max(1,N*0.2); mid/=Math.max(1,N*0.5); air/=Math.max(1,N*0.3);
+      level=Math.min(1, Math.sqrt(sum/N)*2.2);
+      beat = (low>0.55?1:0)*0.4 + (mid>0.5?0.2:0);
+      impact = Math.max(0, low*1.2 + mid*0.6 + air*0.4 - 0.6);
+      kick=low; snare=mid; hat=air;
+
+      // upload spec
+      const sBins=this.specBins, tmp=new Uint8Array(sBins*4);
+      for(let i=0;i<sBins;i++){ const srcIdx=Math.floor(i*N/sBins); const v=this.freq[srcIdx]; tmp[i*4]=tmp[i*4+1]=tmp[i*4+2]=v; tmp[i*4+3]=255; }
+      gl.activeTexture(gl.TEXTURE0+6); gl.bindTexture(gl.TEXTURE_2D, this.specTex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,sBins,1,0,gl.RGBA,gl.UNSIGNED_BYTE,tmp);
+      // upload wave
+      const wBins=this.waveBins, tmp2=new Uint8Array(wBins*4), M=this.wave.length;
+      for(let i=0;i<wBins;i++){ const idx=Math.floor(i*M/wBins); const v=this.wave[idx]; tmp2[i*4]=tmp2[i*4+1]=tmp2[i*4+2]=v; tmp2[i*4+3]=255; }
+      gl.activeTexture(gl.TEXTURE0+8); gl.bindTexture(gl.TEXTURE_2D, this.waveTex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,wBins,1,0,gl.RGBA,gl.UNSIGNED_BYTE,tmp2);
     }
 
-    if (this.transitioning) this.renderMorph(now);
-    else this.renderScene(now);
+    // rotation timing
+    const elapsed = now - this.sceneStart;
+    const scene = this.scenes[this.idx];
+    if(!this.transitioning && !(this.rotatePaused || (performance.now() < this.rotatePausedUntil)) && now >= this.rotateAt){
+      this.nextScene();
+    }
 
-    this.anim = requestAnimationFrame(this.loop);
-  }
+    // Render / morph
+    if(this.transitioning){
+      const p=Math.min(1,(now-this.transStart)/this.transDur);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,this.canvas.width,this.canvas.height);
+      gl.useProgram(this.morphProg);
+      const u=(n:string)=>gl.getUniformLocation(this.morphProg,n);
+      gl.activeTexture(gl.TEXTURE0+0); gl.bindTexture(gl.TEXTURE_2D,this.texA); gl.uniform1i(u('uFrom')!,0);
+      gl.activeTexture(gl.TEXTURE0+1); gl.bindTexture(gl.TEXTURE_2D,this.texB); gl.uniform1i(u('uTo')!,1);
+      gl.uniform1f(u('uProgress')!,p);
+      gl.uniform2f(u('uRes')!,this.canvas.width,this.canvas.height);
+      gl.uniform1f(u('uBeat')!,beat); gl.uniform1f(u('uImpact')!,impact); gl.uniform3f(u('uBands')!,low,mid,air);
+      const a=gl.getAttribLocation(this.morphProg,'aPos'); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
+      gl.drawArrays(gl.TRIANGLES,0,6);
+      if(p>=1){ this.transitioning=false; this.sceneStart=performance.now(); this.deadFrames=0; 
+      this.rotateAt = this.holdUntil; 
+/* inlined now (decl removed) */
+      this.holdUntil = now + MIN_MODE_HOLD_MS + Math.random() * MODE_JITTER_MS;
+      this.rotateAt = this.holdUntil; 
+/* inlined now (decl removed) */
+      this.lastModeAt = now;
+      this.rotatePausedUntil = performance.now() + 25000;
+      this.rotateAt = this.holdUntil; }
+    } else {
+      this.drawToScreen(scene, t, {level,low,mid,air,beat,impact,kick,snare,hat});
+      // Dead-frame watchdog
+      const px=new Uint8Array(4); this.gl.readPixels(0,0,1,1,this.gl.RGBA,this.gl.UNSIGNED_BYTE,px);
+      const lum=(px[0]+px[1]+px[2])/3;
+      if(lum<2){ this.deadFrames++; } else { this.deadFrames=0; }
+      if(this.deadFrames>45){ console.warn('[watchdog] scene dead → skipping', scene); this.nextScene(); }
+    }
 
-  private renderScene(now:number){
-    const gl=this.gl!; gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,this.canvas.width,this.canvas.height);
-    gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
-    const t=now/1000;
-    const scene = ['barsPro','centerBars','circleSpectrum','waveformLine','radialRings','oscDual','sunburst','lissajous','tunnel','particles','starfield','wow','server'][this.sceneIdx];
-    if (scene==='wow') this.drawWOW(t, this.env);
-    else if (scene==='server') this.drawServer(t, this.env);
-    else this.drawClassic(scene as any, t, this.env);
-  }
-
-  private beginTransition(resetTimer=false){
-    this.transitioning = true; this.transStart = performance.now();
-    if (resetTimer) this.sceneTimer=0;
-    const now=performance.now();
-    this.renderSceneTo(this.texSceneA!, this.sceneA!, now, ['barsPro','centerBars','circleSpectrum','waveformLine','radialRings','oscDual','sunburst','lissajous','tunnel','particles','starfield','wow','server'][this.sceneIdx]);
-  }
-
-  private nextScene(){
-    const prevIdx = this.sceneIdx;
-    this.sceneIdx = (this.sceneIdx + 1) % this.scenes.length;
-    const now=performance.now();
-    this.renderSceneTo(this.texSceneA!, this.sceneA!, now, this.scenes[prevIdx]);
-    this.renderSceneTo(this.texSceneB!, this.sceneB!, now, this.scenes[this.sceneIdx]);
-    this.beginTransition(true);
+    this.anim=requestAnimationFrame(this.loop);
   }
 
   private renderSceneTo(tex:WebGLTexture, fb:WebGLFramebuffer, now:number, kind:string){
@@ -754,3 +793,115 @@ export class Visualizer {
     gl.drawArrays(gl.TRIANGLES,0,6);
   }
 }
+
+
+// === injected modes: strong music-reactive ===
+const beatShockwaves = {
+  name: 'beatShockwaves',
+  kind: 'fragment',
+  frag: `
+precision mediump float;
+uniform vec2  uResolution;
+uniform float uTime;
+uniform float uLevel;
+uniform float uBass;
+uniform float uAir;
+
+vec2 toUV(vec2 frag, vec2 res){
+  float s = min(res.x, res.y);
+  return (frag - 0.5*res) / s;
+}
+float ring(float d, float w){ return smoothstep(w, 0.0, abs(d)); }
+float hard(float x){ return pow(max(x,0.0), 3.0); }
+
+void main(){
+  vec2  uv   = toUV(gl_FragCoord.xy, uResolution);
+  float t    = uTime;
+  float drive = hard(uBass*1.2 + uLevel*0.8);
+
+  float r = length(uv);
+  float speed = mix(2.0, 5.0, clamp(drive, 0.0, 1.0));
+  float k = 0.0;
+
+  for(int i=0;i<3;i++){
+    float ph = t*speed - float(i)*0.9;
+    float wave = sin(12.0*r - ph*8.0);
+    float width = mix(0.12, 0.04, drive);
+    k += ring(wave, width) * mix(0.6, 1.2, drive);
+  }
+
+  float glow = exp(-4.0*dot(uv,uv)) * (0.3 + 1.5*hard(uAir));
+
+  vec3 col = vec3(0.02);
+  col += k * vec3(0.1, 0.9, 0.9);
+  col += glow * vec3(1.0, 0.2, 0.7);
+
+  float v = smoothstep(1.1, 0.3, length(uv));
+  col *= v;
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`
+};
+
+const particleBurstGrid = {
+  name: 'particleBurstGrid',
+  kind: 'fragment',
+  frag: `
+precision mediump float;
+uniform vec2  uResolution;
+uniform float uTime;
+uniform sampler2D uBandsTex;
+
+vec2 uvN(vec2 frag, vec2 res){
+  float s = min(res.x, res.y);
+  return (frag - 0.5*res)/s;
+}
+float h1(float x){ return fract(sin(x*12.3456)*43758.5453); }
+float softDisc(vec2 p, float r, float blur){
+  float d = length(p) - r;
+  return smoothstep(blur, 0.0, -d);
+}
+
+void main(){
+  vec2  uv = uvN(gl_FragCoord.xy, uResolution);
+  float t  = uTime;
+
+  vec3 col = vec3(0.0);
+  int NX=6; int NY=4;
+  float s = 0.6;
+
+  for(int iy=0; iy<4; iy++){
+    for(int ix=0; ix<6; ix++){
+      int idx = iy*6 + ix;
+      float fx = float(ix);
+      float fy = float(iy);
+
+      vec2 base = vec2(
+        mix(-s, s, (fx+0.5)/float(NX)),
+        mix(-s*0.75, s*0.75, (fy+0.5)/float(NY))
+      );
+
+      float bandU = (float(idx)+0.5)/24.0;
+      float band  = texture2D(uBandsTex, vec2(bandU, 0.5)).r;
+
+      float j = h1(float(idx)*3.1);
+      vec2 jitter = 0.04*vec2(sin(t*1.3 + j*6.28), cos(t*1.7 + j*6.28));
+
+      float radius = mix(0.015, 0.08, band);
+      float alpha  = pow(band, 3.0) * 2.2;
+
+      float d = softDisc(uv - (base + jitter), radius, 0.02);
+      vec3  orb = vec3(0.6, 0.9, 1.0);
+      vec3  rim = vec3(0.1, 0.6, 1.2);
+
+      col += alpha * (d*orb + d*d*rim);
+    }
+  }
+
+  col += 0.03 * smoothstep(1.2, 0.3, length(uv));
+  gl_FragColor = vec4(col, 1.0);
+}
+`
+};
+// === end injected modes ===
