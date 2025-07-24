@@ -1,10 +1,12 @@
 /**
- * QuantumSynth Visualizer — Aspect-correct & Container-scaled
- * - Uses ResizeObserver to match canvas to its container
- * - All shaders use toAspect() helper with uRes for correct geometry
- * - Viewport updates on any container resize (with DPR support)
- * - Keeps classic scenes, WOW, server shader, morph transitions
+ * QuantumSynth Visualizer — compile-safe build
+ * - Aspect-correct, container-scaled
+ * - Classic scenes + WOW feedback + optional server shader
+ * - Audio-reactive via AnalyserNode (screen-share mic/desktop)
+ * - WS stream (/ws) for uStreamTex frames if backend provides them
  */
+import { httpBase, wsUrl } from './backend-config';
+
 type GL = WebGLRenderingContext | WebGL2RenderingContext;
 type VizOpts = { onStatus?: (s: string) => void; onFps?: (fps: number) => void; };
 
@@ -59,23 +61,14 @@ float waveSample(float x){
   return texture2D(uWaveTex, vec2(u,0.5)).r;
 }
 `;
-// Block any “rings” / “radial glow” style presets from ever entering rotation
-const BANNED_PRESET_REGEX = /(^|[^a-z])(ring(s)?|concentric|radial(\s*glow)?)([^a-z]|$)/i;
 
-// Rotation timing (fixes “skips after a second”)
-const MIN_MODE_HOLD_MS = 42000;   // stay at least this long
-const MODE_JITTER_MS    = 18000;  // random extra hold
-
-
-/* ===== PUNCHY SCENES ===== */
-
-/* 1) Pro bars (kept), hotter glow */
+// ===== Scenes (subset kept) =====
 const FS_BARSPRO = `
 ${PRELUDE}
 ${SPEC_HELP}
 uniform float uTime,uLevel,uBeat,uLow,uMid,uAir,uImpact;
 void main(){
-  vec2 uv=vUV; // bars use UV directly (x axis linear)
+  vec2 uv=vUV;
   float x = pow(uv.x, 0.72);
   float a = specSample(x);
   float H = 0.05 + 1.35*a + 0.65*uLevel + 0.25*uLow + 0.35*uImpact;
@@ -208,7 +201,7 @@ ${WAVE_HELP}
 uniform float uTime,uBeat,uAir,uImpact;
 void main(){
   vec2 uv=toAspect(vUV);
-  float a=waveSample(fract((vUV.x))); // keep sampling in 0..1 space
+  float a=waveSample(fract((vUV.x)));
   float b=waveSample(fract((vUV.y)));
   float d = length(uv - vec2(2.0*a-1.0, 2.0*b-1.0));
   float line = smoothstep(0.018+0.01*uImpact, 0.0, d-0.002);
@@ -277,8 +270,7 @@ void main(){
 }
 `;
 
-/* ========================= WOW & Morph (kept, aspect-aware) ========================= */
-
+// WOW feedback
 const FS_WOW = `
 ${PRELUDE}
 uniform sampler2D uFeedback, uStreamTex;
@@ -306,56 +298,24 @@ void main(){
 }
 `;
 
+// Simple morph (kept for future, used as straight blit here)
 const FS_MORPH = `
 ${PRELUDE}
 uniform sampler2D uFrom, uTo;
 uniform float uProgress, uBeat, uImpact;
 uniform vec3  uBands;
-vec3 toRGB(vec4 c){ return c.rgb; }
-float luma(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }
-vec2 sobel(sampler2D t, vec2 uv, vec2 px){
-  float tl=luma(texture2D(t, uv+px*vec2(-1.0,-1.0)).rgb);
-  float  l=luma(texture2D(t, uv+px*vec2(-1.0, 0.0)).rgb);
-  float bl=luma(texture2D(t, uv+px*vec2(-1.0, 1.0)).rgb);
-  float tr=luma(texture2D(t, uv+px*vec2( 1.0,-1.0)).rgb);
-  float  r=luma(texture2D(t, uv+px*vec2( 1.0, 0.0)).rgb);
-  float br=luma(texture2D(t, uv+px*vec2( 1.0, 1.0)).rgb);
-  float  t0=luma(texture2D(t, uv+px*vec2( 0.0,-1.0)).rgb);
-  float  b0=luma(texture2D(t, uv+px*vec2( 0.0, 1.0)).rgb);
-  vec2 g;
-  g.x = (tr + 2.0*r + br) - (tl + 2.0*l + bl);
-  g.y = (bl + 2.0*b0 + br) - (tl + 2.0*t0 + tr);
-  return g;
-}
-vec2 norm2(vec2 v){ float m=max(1e-5, length(v)); return v/m; }
 void main(){
-  vec2 uv=vUV; vec2 px=1.0/uRes;
-  float p = smoothstep(0.0,1.0,uProgress);
-  vec2 gA = sobel(uFrom, uv, px);
-  vec2 gB = sobel(uTo,   uv, px);
-  vec2 dirA = norm2(gA);
-  vec2 dirB = norm2(gB);
-  float magA = min(1.0, length(gA));
-  float magB = min(1.0, length(gB));
-  float featA = smoothstep(0.15, 0.6, magA);
-  float featB = smoothstep(0.15, 0.6, magB);
-  float audioAmp = 0.25 + 1.8*uBands.x + 0.8*uImpact + 0.45*uBeat;
-  vec2 ua = uv, ub = uv;
-  float stepLen = (0.8 + 1.4*uBands.z) * (0.0035 + 0.0045*audioAmp);
-  for(int i=0;i<6;i++){ ua += dirA * stepLen * (1.0-p) * featA; ub -= dirB * stepLen * (p) * featB; }
-  vec3 colA = texture2D(uFrom, ua).rgb;
-  vec3 colB = texture2D(uTo,   ub).rgb;
-  float carryA = featA * (1.0 - p);
-  float carryB = featB * p;
-  float w = smoothstep(0.0,1.0, p + 0.25*(carryB - carryA)) + 0.15*uBeat;
-  w = min(max(w, 0.0), 1.0);
-  vec3 glow = vec3(0.08,0.04,0.12) * (uBeat*0.6 + uImpact*0.25);
-  vec3 col = mix(colA, colB, w) + glow;
+  vec2 uv=vUV;
+  float p = clamp(uProgress,0.0,1.0);
+  vec3 A = texture2D(uFrom, uv).rgb;
+  vec3 B = texture2D(uTo,   uv).rgb;
+  vec3 col = mix(A,B,p);
   gl_FragColor = vec4(col,1.0);
 }
 `;
 
-/* ========================= Visualizer class (container-aware) ========================= */
+const MIN_MODE_HOLD_MS = 15000;
+const MODE_JITTER_MS   = 17000;
 
 export class Visualizer {
   private canvas: HTMLCanvasElement;
@@ -370,16 +330,8 @@ export class Visualizer {
   private wave: Uint8Array | null = null;
   private stream: MediaStream | null = null;
 
-  // reactivity (same as before)
-  private env=0; private envAttack=0.52; private envRelease=0.10;
-  private lastMag: Float32Array | null = null;
-  private fluxRing:number[]=[]; private fluxIdx=0; private fluxSize=64;
-  private beat=0; private beatCooldown=0;
-  private bands=[0,0,0,0];
-  private kick=0; private snare=0; private hat=0;
-  private peak=[0,0,0,0];
-  private agcGain=1.0; private agcTarget=0.50; private agcSpeedUp=0.12; private agcSpeedDown=0.03;
-  private impact=0;
+  private beat=0; private kick=0; private snare=0; private hat=0;
+  private peak=[0,0,0,0]; private impact=0; private level=0;
 
   private specTex: WebGLTexture | null = null;
   private waveTex: WebGLTexture | null = null;
@@ -391,28 +343,18 @@ export class Visualizer {
 
   private sceneProg: Record<string, WebGLProgram | null> = { };
   private serverProg: WebGLProgram | null = null;
-  private serverUniforms: Record<string, WebGLUniformLocation | null> = {};
-  private serverTextures: { name:string; tex:WebGLTexture; unit:number; meta?:ServerTexture }[] = [];
 
   private wowProg: WebGLProgram | null = null;
   private fbA: WebGLFramebuffer | null = null; private fbB: WebGLFramebuffer | null = null;
   private texA: WebGLTexture | null = null;     private texB: WebGLTexture | null = null;
   private decay=0.88;
 
-  private sceneA: WebGLFramebuffer | null = null; private sceneB: WebGLFramebuffer | null = null;
-  private texSceneA: WebGLTexture | null = null; private texSceneB: WebGLTexture | null = null;
-  private morphProg: WebGLProgram | null = null;
-
   private scenes = ['barsPro','centerBars','circleSpectrum','waveformLine','radialRings','oscDual','sunburst','lissajous','tunnel','particles','starfield','wow','server'] as const;
   private sceneIdx = 0;
-  private sceneTimer = 0;
-  private sceneMinMs = 15000;
-  private sceneMaxMs = 32000;
-  private transitioning = false;
-  private transStart = 0; private transDur = 1900;
+  private nextSwitchAt = 0;
+  private rotatePaused = false;
 
   private anim:number|undefined; private frames=0; private lastFPS=performance.now();
-  private resizeObs: ResizeObserver | null = null;
 
   constructor(canvas: HTMLCanvasElement, private opts: VizOpts = {}) {
     this.canvas = canvas;
@@ -422,144 +364,30 @@ export class Visualizer {
     this.initGL();
     this.initAudioTextures();
     this.initWS();
-    this.observeContainer();
-    this.opts.onStatus?.('Ready. M next • 1–9 classic • 0 starfield • 5 WOW • V WOW/Server • N server shader');
-  }
-
-  private safeLink(name:string, fsSrc:string): WebGLProgram | null {
-    try { return link(this.gl!, VS, fsSrc); }
-    catch (e:any) { console.error(`[Shader:${name}]`, e?.message||e); return null; }
-  }
-
-  private observeContainer(){
-    const container = this.canvas.parentElement || document.body;
-    const ro = new ResizeObserver(()=>this.resize());
-    ro.observe(container);
-    this.resizeObs = ro;
     this.resize();
-  }
-
-  // small RT helpers
-  private mkTex(w:number,h:number){ const gl=this.gl!; const t=gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D,t); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; }
-  private mkFB(t:WebGLTexture){ const gl=this.gl!; const f=gl.createFramebuffer()!; gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0); gl.bindFramebuffer(gl.FRAMEBUFFER,null); return f; }
-
-  private initGL(){
-    const gl=this.gl!;
-    // quad
-    const quad = gl.createBuffer()!; this.quad=quad; gl.bindBuffer(gl.ARRAY_BUFFER, quad);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1]), gl.STATIC_DRAW);
-
-    // ping-pong + scene RTs at half-res (auto-resized in resize())
-    this.texA=this.mkTex(2,2); this.fbA=this.mkFB(this.texA);
-    this.texB=this.mkTex(2,2); this.fbB=this.mkFB(this.texB);
-    this.texSceneA=this.mkTex(2,2); this.sceneA=this.mkFB(this.texSceneA);
-    this.texSceneB=this.mkTex(2,2); this.sceneB=this.mkFB(this.texSceneB);
-
-    // compile scenes
-    const sources: Record<string,string> = {
-      barsPro:FS_BARSPRO, starburst:FS_STARBURST, shockwave:FS_SHOCKWAVE,
-      neonVoronoi:FS_NEONVORONOI, cityBars:FS_CITYBARS, particlesBurst:FS_PARTICLESBURST,
-      flowfieldNeon:FS_FLOWNEON, waveformLine:FS_WAVEFORMLINE
-    };
-    for(const [k,src] of Object.entries(sources)){
-      try{ const p=this.link(VS,src); this.progs[k]=p; const loc=gl.getAttribLocation(p,'aPos'); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0); }
-      catch(e){ console.error('[Shader fail]',k,e); this.progs[k]=null; }
-    }
-    this.morphProg=this.link(VS,FS_MORPH); { const loc=gl.getAttribLocation(this.morphProg,'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0); }
-
-    // sizing
     new ResizeObserver(()=>this.resize()).observe(this.canvas.parentElement || document.body);
-    this.resize();
+    this.opts.onStatus?.('Ready. M next • 1–9 classic • 0 starfield • 5 WOW • V WOW/Server • N server shader');
 
-    
-    // schedule first auto-rotation
-    this.rotateAt = this.holdUntil;
-// keys
     window.addEventListener('keydown',(e)=>{
       const k=e.key.toLowerCase();
       if(k==='m') this.nextScene();
-      if(k==='p'){ this.togglePause(); }
-      const list=this.scenes as readonly string[];
+      if(k==='v') this.toggleWow();
+      if(k==='n') this.loadServerShader('composite').then(()=>this.opts.onStatus?.('Server shader refreshed')).catch(()=>{});
       if('1234567890'.includes(k)){
-        let idx = (k==='0') ? list.length-1 : parseInt(k,10)-1;
-        idx = Math.max(0, Math.min(list.length-1, idx));
-        if(list[idx]){ this.idx=idx; this.beginTransition(true); }
+        const map=['barsPro','centerBars','circleSpectrum','waveformLine','radialRings','oscDual','sunburst','lissajous','tunnel','particles','starfield'];
+        const idx=(k==='0')?map.indexOf('starfield'):parseInt(k,10)-1;
+        if(map[idx]){ this.sceneIdx = this.scenes.indexOf(map[idx] as any); }
       }
     });
   }
 
   /* public controls */
   isPaused(){ return this.rotatePaused; }
-  togglePause(){ this.rotatePaused=!(this.rotatePaused || (performance.now() < this.rotatePausedUntil)); if(!this.anim) this.loop(); }
+  togglePause(){ this.rotatePaused=!this.rotatePaused; }
 
-  private mkTex(w:number,h:number){ const gl=this.gl; const t=gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D,t); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; }
-  private mkFB(t:WebGLTexture){ const gl=this.gl; const f=gl.createFramebuffer()!; gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0); gl.bindFramebuffer(gl.FRAMEBUFFER,null); return f; }
-  private mkAudioTex(w:number){ const gl=this.gl; const t=gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D,t); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,1,0,gl.RGBA,gl.UNSIGNED_BYTE,null); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; }
-
-  private compile(type:number,src:string){ const gl=this.gl; const s=gl.createShader(type)!; gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)||'compile'); return s; }
-  private link(vs:string, fs:string){ const gl=this.gl; const p=gl.createProgram()!; gl.attachShader(p,this.compile(gl.VERTEX_SHADER,vs)); gl.attachShader(p,this.compile(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)||'link'); return p; }
-
-  private resize(){
-    const gl=this.gl!; const dpr=Math.max(1,Math.round(window.devicePixelRatio||1));
-    const container=this.canvas.parentElement || document.body;
-    const w=(container as HTMLElement).clientWidth || window.innerWidth;
-    const h=(container as HTMLElement).clientHeight || window.innerHeight;
-    const W=w*dpr, H=h*dpr;
-    if (this.canvas.width!==W || this.canvas.height!==H){
-      this.canvas.width=W; this.canvas.height=H;
-      this.canvas.style.width=w+"px"; this.canvas.style.height=h+"px";
-      gl.viewport(0,0,W,H);
-      // re-create RTs at half-resolution to match new size
-      const hw=Math.max(2, Math.floor(W/2)), hh=Math.max(2, Math.floor(H/2));
-      const remake=(tRef:'A'|'B'|'SA'|'SB')=>{
-        let tex=null, fb=null;
-        if(tRef==='A'){ tex=this.texA; fb=this.fbA; }
-        if(tRef==='B'){ tex=this.texB; fb=this.fbB; }
-        if(tRef==='SA'){ tex=this.texSceneA; fb=this.sceneA; }
-        if(tRef==='SB'){ tex=this.texSceneB; fb=this.sceneB; }
-        if(tex && fb){
-          gl.bindTexture(gl.TEXTURE_2D, tex);
-          gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,hw,hh,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
-          gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-          gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
-          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        }
-      };
-      ['A','B','SA','SB'].forEach(r=>remake(r as any));
-    }
-  }
-
-  private initAudioTextures(){
-    const gl=this.gl!;
-    const mk=(w:number)=>{ const t=gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D,t); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,1,0,gl.RGBA,gl.UNSIGNED_BYTE,null); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; };
-    this.specTex = mk(this.specBins);
-    this.waveTex = mk(this.waveBins);
-  }
-
-  private initWS(){
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    this.ws?.close(); this.ws=new WebSocket(`${proto}//${location.host}/ws`);
-    this.ws.binaryType='arraybuffer';
-    this.ws.onopen=()=>{ this.ws?.send(JSON.stringify({type:'subscribe',field:'waves',w:256,h:256,fps:24})); };
-    this.ws.onmessage=(ev)=>{ if(typeof ev.data==='string')return; this.onStreamFrame(ev.data as ArrayBuffer); };
-  }
-
-  private onStreamFrame(buf:ArrayBuffer){
-    const gl=this.gl!; const dv=new DataView(buf,0,24);
-    const magic=String.fromCharCode(...new Uint8Array(buf.slice(0,8))); if(!magic.startsWith('FRAMEv1')) return;
-    const w=dv.getUint32(8,true), h=dv.getUint32(12,true), ch=dv.getUint32(16,true); if(ch!==4) return;
-    const px=new Uint8Array(buf,24);
-    this.streamW=w; this.streamH=h;
-    gl.activeTexture(gl.TEXTURE0 + this.streamUnit);
-    gl.bindTexture(gl.TEXTURE_2D, this.streamTex!);
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,px);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
-  }
-
-  // Public API (same as before)
   async start(){ await this.loadServerShader('composite').catch(()=>{}); this.loop(); }
   stop(){ if(this.anim) cancelAnimationFrame(this.anim); this.ws?.close(); }
+
   async startScreenShare(){
     const s = await navigator.mediaDevices.getDisplayMedia({video:true,audio:{echoCancellation:false,noiseSuppression:false}});
     if(!s.getAudioTracks().length){ s.getTracks().forEach(t=>t.stop()); throw new Error('No audio shared'); }
@@ -576,65 +404,127 @@ export class Visualizer {
   isSharing(){ return !!this.stream; }
   setDemoMode(v:boolean){ if(v) this.stopScreenShare(); }
 
-  toggleWow(){ if (this.scenes[this.sceneIdx] === 'wow') this.sceneIdx = this.scenes.indexOf('server'); else this.sceneIdx = this.scenes.indexOf('wow'); this.beginTransition(true); }
-  async loadServerShaderPublic(){ await this.loadServerShader('composite'); this.opts.onStatus?.('Server shader refreshed'); }
-
-  private onKey(e:KeyboardEvent){
-    const k=e.key.toLowerCase();
-    if(k==='v') this.toggleWow();
-    if(k==='n') this.loadServerShaderPublic();
-    if(k==='m') this.nextScene();
-    const map=['barsPro','centerBars','circleSpectrum','waveformLine','radialRings','oscDual','sunburst','lissajous','tunnel','particles','starfield'];
-    if('0123456789'.includes(k)){ const idx=(k==='0')?map.indexOf('starfield'):parseInt(k,10)-1; if(map[idx]){ this.sceneIdx = this.scenes.indexOf(map[idx] as any); this.beginTransition(true); } }
+  toggleWow(){
+    const cur = this.scenes[this.sceneIdx];
+    this.sceneIdx = this.scenes.indexOf(cur === 'wow' ? 'server' : 'wow');
   }
 
-  private async loadServerShader(type?:string){
-    const params=new URLSearchParams(); if(type) params.set('type',type); params.set('ts',Date.now().toString());
-    const url='/api/shader/next?'+params.toString();
-    const r=await fetch(url,{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status);
-    const s = (await r.json()) as ServerShader;
+  private initGL(){
     const gl=this.gl!;
-    try{
-      const p = link(gl, VS, s.code);
-      this.serverProg = p;
-      this.serverUniforms = {}; this.serverTextures = [];
-      gl.useProgram(p);
-      for (const name of ['uTime','uRes','uLevel','uBands','uPulse','uBeat','uBlendFlow','uBlendRD','uBlendStream','uFrame','uAtlasGrid','uAtlasFrames','uAtlasFPS','uStreamRes','uImpact']) {
-        this.serverUniforms[name] = gl.getUniformLocation(p, name);
-      }
-      let unit=0;
-      if (s.textures) for (const t of s.textures) {
-        const tex=gl.createTexture()!;
-        await new Promise<void>((res,rej)=>{ const img=new Image(); img.onload=()=>{ gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D,tex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT); res(); }; img.onerror=()=>rej(new Error('tex')); img.src=t.dataUrl; });
-        const u=gl.getUniformLocation(p,t.name); if(u) gl.uniform1i(u,unit);
-        this.serverTextures.push({name:t.name, tex, unit, meta:t}); unit++;
-        if (t.gridCols && t.gridRows) {
-          this.serverUniforms['uAtlasGrid']   && gl.uniform2f(this.serverUniforms['uAtlasGrid']!, t.gridCols, t.gridRows);
-          this.serverUniforms['uAtlasFrames'] && gl.uniform1f(this.serverUniforms['uAtlasFrames']!, t.frames ?? (t.gridCols*t.gridRows));
-          this.serverUniforms['uAtlasFPS']    && gl.uniform1f(this.serverUniforms['uAtlasFPS']!, t.fps ?? 24);
-        }
-      }
-      const uS=gl.getUniformLocation(p,'uStreamTex'); if(uS) gl.uniform1i(uS,this.streamUnit);
-      const uSR=this.serverUniforms['uStreamRes']; if(uSR) gl.uniform2f(uSR,this.streamW,this.streamH);
-    }catch(err){ console.error('[ServerShader] compile/link failed:', err); }
+    // quad
+    const quad = gl.createBuffer()!; this.quad=quad; gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1]), gl.STATIC_DRAW);
+
+    // feedback ping-pong
+    this.texA=this.mkTex(2,2); this.fbA=this.mkFB(this.texA);
+    this.texB=this.mkTex(2,2); this.fbB=this.mkFB(this.texB);
+
+    // compile scenes we actually have
+    const sources: Record<string,string> = {
+      barsPro:FS_BARSPRO,
+      centerBars:FS_CENTERBARS,
+      circleSpectrum:FS_CIRCLESPEC,
+      waveformLine:FS_WAVEFORMLINE,
+      radialRings:FS_RADIALRINGS,
+      oscDual:FS_OSCDUAL,
+      sunburst:FS_SUNBURST,
+      lissajous:FS_LISSAJOUS,
+      tunnel:FS_TUNNEL,
+      particles:FS_PARTICLES,
+      starfield:FS_STARFIELD,
+    };
+    for(const [k,src] of Object.entries(sources)){
+      try{ const p=link(gl,VS,src); this.sceneProg[k]=p; } catch(e){ console.error('[Shader fail]',k,e); this.sceneProg[k]=null; }
+    }
+    try{ this.wowProg = link(gl,VS,FS_WOW); } catch(e){ console.error('[WOW fail]',e); this.wowProg=null; }
+
+    // stream texture
+    this.streamTex = this.mkTex(2,2);
+
+    // schedule first auto-rotation
+    this.bumpSwitchTimer();
   }
 
-  private loop=()=>{
+  private mkTex(w:number,h:number){ const gl=this.gl!; const t=gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D,t); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; }
+  private mkFB(t:WebGLTexture){ const gl=this.gl!; const f=gl.createFramebuffer()!; gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0); gl.bindFramebuffer(gl.FRAMEBUFFER,null); return f; }
+
+  private initAudioTextures(){
+    const gl=this.gl!;
+    const mk=(w:number)=>{ const t=gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D,t); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,1,0,gl.RGBA,gl.UNSIGNED_BYTE,null); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; };
+    this.specTex = mk(this.specBins);
+    this.waveTex = mk(this.waveBins);
+  }
+
+  private initWS(){
+    try{
+      this.ws?.close();
+      const url = wsUrl('/ws');
+      this.ws = new WebSocket(url);
+      this.ws.binaryType='arraybuffer';
+      this.ws.onopen=()=>{ this.ws?.send(JSON.stringify({type:'subscribe',field:'waves',w:256,h:256,fps:24})); };
+      this.ws.onmessage=(ev)=>{ if(typeof ev.data==='string')return; this.onStreamFrame(ev.data as ArrayBuffer); };
+    }catch(e){ console.warn('WS init failed', e); }
+  }
+
+  private onStreamFrame(buf:ArrayBuffer){
+    const gl=this.gl!; const dv=new DataView(buf,0,24);
+    const magic=String.fromCharCode(...new Uint8Array(buf.slice(0,8))); if(!magic.startsWith('FRAMEv1')) return;
+    const w=dv.getUint32(8,true), h=dv.getUint32(12,true), ch=dv.getUint32(16,true); if(ch!==4) return;
+    const px=new Uint8Array(buf,24);
+    this.streamW=w; this.streamH=h;
+    gl.activeTexture(gl.TEXTURE0 + this.streamUnit);
+    gl.bindTexture(gl.TEXTURE_2D, this.streamTex!);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,px);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+  }
+
+  private resize(){
+    const gl=this.gl!; const dpr=Math.max(1,Math.round(window.devicePixelRatio||1));
+    const container=this.canvas.parentElement || document.body;
+    const w=(container as HTMLElement).clientWidth || window.innerWidth;
+    const h=(container as HTMLElement).clientHeight || window.innerHeight;
+    const W=w*dpr, H=h*dpr;
+    if (this.canvas.width!==W || this.canvas.height!==H){
+      this.canvas.width=W; this.canvas.height=H;
+      this.canvas.style.width=w+"px"; this.canvas.style.height=h+"px";
+      gl.viewport(0,0,W,H);
+      // resize feedback
+      const hw=Math.max(2, Math.floor(W/2)), hh=Math.max(2, Math.floor(H/2));
+      const reinit=(t:WebGLTexture|null, fb:WebGLFramebuffer|null)=>{ if(!t||!fb)return; gl.bindTexture(gl.TEXTURE_2D,t); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,hw,hh,0,gl.RGBA,gl.UNSIGNED_BYTE,null); gl.bindFramebuffer(gl.FRAMEBUFFER,fb); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0); gl.bindFramebuffer(gl.FRAMEBUFFER,null); };
+      reinit(this.texA,this.fbA); reinit(this.texB,this.fbB);
+    }
+  }
+
+  private nextScene(){
+    this.sceneIdx = (this.sceneIdx + 1) % this.scenes.length;
+    this.bumpSwitchTimer();
+  }
+
+  private bumpSwitchTimer(){
+    const now=performance.now();
+    this.nextSwitchAt = now + MIN_MODE_HOLD_MS + Math.random() * MODE_JITTER_MS;
+  }
+
+  private loop = () => {
     const gl=this.gl!;
     const now=performance.now(); this.frames++; if(now-this.lastFPS>=1000){ this.opts.onFps?.(this.frames); this.frames=0; this.lastFPS=now; }
 
-    // audio analysis omitted here (same as previous build) — reactivity preserved
-    let level=0;
+    // audio analysis
+    let low=0, mid=0, air=0; let level=0;
     if (this.analyser && this.freq && this.wave) {
       this.analyser.getByteFrequencyData(this.freq);
       this.analyser.getByteTimeDomainData(this.wave);
       const N=this.freq.length; let sum=0;
-      for(let i=0;i<N;i++){ const v=this.freq[i]/255; sum+=v*v; if(i<N*0.2) low+=v; else if(i<N*0.7) mid+=v; else air+=v; }
+      for(let i=0;i<N;i++){
+        const v=this.freq[i]/255; sum+=v*v;
+        if(i<N*0.2) low+=v; else if(i<N*0.7) mid+=v; else air+=v;
+      }
       low/=Math.max(1,N*0.2); mid/=Math.max(1,N*0.5); air/=Math.max(1,N*0.3);
       level=Math.min(1, Math.sqrt(sum/N)*2.2);
-      beat = (low>0.55?1:0)*0.4 + (mid>0.5?0.2:0);
-      impact = Math.max(0, low*1.2 + mid*0.6 + air*0.4 - 0.6);
-      kick=low; snare=mid; hat=air;
+      this.beat = (low>0.55?1:0)*0.4 + (mid>0.5?0.2:0);
+      this.impact = Math.max(0, low*1.2 + mid*0.6 + air*0.4 - 0.6);
+      this.kick=low; this.snare=mid; this.hat=air;
 
       // upload spec
       const sBins=this.specBins, tmp=new Uint8Array(sBins*4);
@@ -645,263 +535,102 @@ export class Visualizer {
       for(let i=0;i<wBins;i++){ const idx=Math.floor(i*M/wBins); const v=this.wave[idx]; tmp2[i*4]=tmp2[i*4+1]=tmp2[i*4+2]=v; tmp2[i*4+3]=255; }
       gl.activeTexture(gl.TEXTURE0+8); gl.bindTexture(gl.TEXTURE_2D, this.waveTex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,wBins,1,0,gl.RGBA,gl.UNSIGNED_BYTE,tmp2);
     }
+    this.level = level;
 
-    // rotation timing
-    const elapsed = now - this.sceneStart;
-    const scene = this.scenes[this.idx];
-    if(!this.transitioning && !(this.rotatePaused || (performance.now() < this.rotatePausedUntil)) && now >= this.rotateAt){
-      this.nextScene();
-    }
+    // auto-rotate
+    if(!this.rotatePaused && now >= this.nextSwitchAt) this.nextScene();
 
-    // Render / morph
-    if(this.transitioning){
-      const p=Math.min(1,(now-this.transStart)/this.transDur);
-      gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,this.canvas.width,this.canvas.height);
-      gl.useProgram(this.morphProg);
-      const u=(n:string)=>gl.getUniformLocation(this.morphProg,n);
-      gl.activeTexture(gl.TEXTURE0+0); gl.bindTexture(gl.TEXTURE_2D,this.texA); gl.uniform1i(u('uFrom')!,0);
-      gl.activeTexture(gl.TEXTURE0+1); gl.bindTexture(gl.TEXTURE_2D,this.texB); gl.uniform1i(u('uTo')!,1);
-      gl.uniform1f(u('uProgress')!,p);
-      gl.uniform2f(u('uRes')!,this.canvas.width,this.canvas.height);
-      gl.uniform1f(u('uBeat')!,beat); gl.uniform1f(u('uImpact')!,impact); gl.uniform3f(u('uBands')!,low,mid,air);
-      const a=gl.getAttribLocation(this.morphProg,'aPos'); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
-      gl.drawArrays(gl.TRIANGLES,0,6);
-      if(p>=1){ this.transitioning=false; this.sceneStart=performance.now(); this.deadFrames=0; 
-      this.rotateAt = this.holdUntil; 
-/* inlined now (decl removed) */
-      this.holdUntil = now + MIN_MODE_HOLD_MS + Math.random() * MODE_JITTER_MS;
-      this.rotateAt = this.holdUntil; 
-/* inlined now (decl removed) */
-      this.lastModeAt = now;
-      this.rotatePausedUntil = performance.now() + 25000;
-      this.rotateAt = this.holdUntil; }
-    } else {
-      this.drawToScreen(scene, t, {level,low,mid,air,beat,impact,kick,snare,hat});
-      // Dead-frame watchdog
-      const px=new Uint8Array(4); this.gl.readPixels(0,0,1,1,this.gl.RGBA,this.gl.UNSIGNED_BYTE,px);
-      const lum=(px[0]+px[1]+px[2])/3;
-      if(lum<2){ this.deadFrames++; } else { this.deadFrames=0; }
-      if(this.deadFrames>45){ console.warn('[watchdog] scene dead → skipping', scene); this.nextScene(); }
-    }
+    // draw
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    gl.viewport(0,0,this.canvas.width,this.canvas.height);
+
+    const t=now/1000;
+    const scene=this.scenes[this.sceneIdx];
+    if(scene==='wow') this.drawWOW(t);
+    else if(scene==='server') this.drawServer(t);
+    else this.drawClassic(scene as any, t);
 
     this.anim=requestAnimationFrame(this.loop);
   }
 
-  private renderSceneTo(tex:WebGLTexture, fb:WebGLFramebuffer, now:number, kind:string){
-    const gl=this.gl!; gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-    gl.viewport(0,0,Math.max(2,Math.floor(this.canvas.width/2)), Math.max(2,Math.floor(this.canvas.height/2)));
-    gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
-    const t=now/1000;
-    if (kind==='wow') this.drawWOW(t, this.env, true);
-    else if (kind==='server') this.drawServer(t, this.env, true);
-    else this.drawClassic(kind as any, t, this.env, true);
-  }
-
-  private renderMorph(now:number){
-    const gl=this.gl!; if(!this.morphProg) { this.transitioning=false; return; }
-    const p = Math.min(1, (now - this.transStart)/this.transDur);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0,0,this.canvas.width,this.canvas.height);
-    gl.useProgram(this.morphProg);
-    const u=(n:string)=>gl.getUniformLocation(this.morphProg!,n);
-    gl.activeTexture(gl.TEXTURE0 + 0); gl.bindTexture(gl.TEXTURE_2D, this.texSceneA!); gl.uniform1i(u('uFrom')!, 0);
-    gl.activeTexture(gl.TEXTURE0 + 1); gl.bindTexture(gl.TEXTURE_2D, this.texSceneB!); gl.uniform1i(u('uTo')!,   1);
-    gl.uniform1f(u('uProgress')!, p);
-    gl.uniform2f(u('uRes')!, this.canvas.width, this.canvas.height);
-    gl.uniform1f(u('uBeat')!, this.beat);
-    gl.uniform3f(u('uBands')!, this.peak[0], this.peak[2], this.peak[3]);
-    gl.uniform1f(u('uImpact')!, Math.min(2.0,this.impact));
-    const a=gl.getAttribLocation(this.morphProg!,'aPos'); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad!); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-    if (p>=1) this.transitioning=false;
-  }
-
-  private drawClassic(which:any, t:number, level:number, offscreen=false){
+  private drawClassic(which:string, t:number){
     const gl=this.gl!; const p=this.sceneProg[which]; if(!p) return;
     gl.useProgram(p);
     const set=(n:string,v:any,kind:'1f'|'2f'|'3f'|'1i')=>{ const u=gl.getUniformLocation(p,n); if(!u)return; (gl as any)[`uniform${kind}`](u,...(Array.isArray(v)?v:[v])); };
     gl.activeTexture(gl.TEXTURE0+6); gl.bindTexture(gl.TEXTURE_2D, this.specTex!); set('uSpecTex',6,'1i'); set('uSpecN',this.specBins,'1f');
     gl.activeTexture(gl.TEXTURE0+8); gl.bindTexture(gl.TEXTURE_2D, this.waveTex!); set('uWaveTex',8,'1i'); set('uWaveN',this.waveBins,'1f');
     set('uTime',t,'1f'); set('uRes',[this.canvas.width,this.canvas.height],'2f');
-    set('uLevel',level,'1f'); set('uBeat',this.beat,'1f');
-    set('uKick',this.peak[0]*1.35,'1f'); set('uSnare',this.snare,'1f'); set('uHat',this.peak[3],'1f');
-    set('uLow',this.peak[0],'1f'); set('uMid',this.peak[2],'1f'); set('uAir',this.peak[3],'1f');
+    set('uLevel',this.level,'1f'); set('uBeat',this.beat,'1f');
+    set('uKick',this.kick,'1f'); set('uSnare',this.snare,'1f'); set('uHat',this.hat,'1f');
+    set('uLow',this.kick,'1f'); set('uMid',this.snare,'1f'); set('uAir',this.hat,'1f');
     set('uImpact', Math.min(2.0,this.impact), '1f');
     const loc=gl.getAttribLocation(p,'aPos'); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad!); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
     gl.drawArrays(gl.TRIANGLES,0,6);
   }
 
-  private drawWOW(t:number, level:number, toFBO=false){
+  private drawWOW(t:number){
     const gl=this.gl!; if (!this.wowProg) return;
-    if (!toFBO) gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbA);
     const w=Math.max(2,Math.floor(this.canvas.width/2)), h=Math.max(2,Math.floor(this.canvas.height/2));
-    gl.viewport(0,0,w,h); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+    // write into A using B as feedback
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbA); gl.viewport(0,0,w,h); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(this.wowProg);
     const U=(n:string)=>gl.getUniformLocation(this.wowProg!,n);
     gl.uniform1f(U('uTime')!, t);
     gl.uniform2f(U('uRes')!, this.canvas.width, this.canvas.height);
     gl.uniform1f(U('uDecay')!, this.decay);
-    gl.uniform1f(U('uEnv')!, level);
+    gl.uniform1f(U('uEnv')!, this.level);
     gl.uniform1f(U('uBeat')!, this.beat);
-    gl.uniform1f(U('uKick')!, this.peak[0]*1.35);
+    gl.uniform1f(U('uKick')!, this.kick);
     gl.uniform1f(U('uSnare')!, this.snare);
-    gl.uniform1f(U('uHat')!, this.peak[3]);
-    gl.uniform1f(U('uLow')!, this.peak[0]);
-    gl.uniform1f(U('uMid')!, this.peak[2]);
-    gl.uniform1f(U('uAir')!, this.peak[3]);
+    gl.uniform1f(U('uHat')!, this.hat);
+    gl.uniform1f(U('uLow')!, this.kick);
+    gl.uniform1f(U('uMid')!, this.snare);
+    gl.uniform1f(U('uAir')!, this.hat);
     gl.activeTexture(gl.TEXTURE0+7); gl.bindTexture(gl.TEXTURE_2D,this.texB!); gl.uniform1i(U('uFeedback')!,7);
     gl.activeTexture(gl.TEXTURE0 + this.streamUnit); gl.bindTexture(gl.TEXTURE_2D, this.streamTex!); gl.uniform1i(U('uStreamTex')!, this.streamUnit);
     const loc=gl.getAttribLocation(this.wowProg!,'aPos'); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad!); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
     gl.drawArrays(gl.TRIANGLES,0,6);
-    if (!toFBO){
-      gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,this.canvas.width,this.canvas.height);
-      const p=this.morphProg!; gl.useProgram(p);
-      const u=(n:string)=>gl.getUniformLocation(p!,n);
-      gl.activeTexture(gl.TEXTURE0 + 0); gl.bindTexture(gl.TEXTURE_2D, this.texA!); gl.uniform1i(u('uFrom')!, 0);
-      gl.activeTexture(gl.TEXTURE0 + 1); gl.bindTexture(gl.TEXTURE_2D, this.texA!); gl.uniform1i(u('uTo')!,   1);
-      gl.uniform1f(u('uProgress')!, 0.0);
-      gl.uniform2f(u('uRes')!, this.canvas.width, this.canvas.height);
-      gl.uniform1f(u('uBeat')!, this.beat);
-      gl.uniform3f(u('uBands')!, this.peak[0], this.peak[2], this.peak[3]);
-      gl.uniform1f(u('uImpact')!, Math.min(2.0,this.impact));
-      const a=gl.getAttribLocation(p!,'aPos'); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad!); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
-      gl.drawArrays(gl.TRIANGLES,0,6);
-      const tTex=this.texA; this.texA=this.texB; this.texB=tTex;
-      const tFB=this.fbA; this.fbA=this.fbB; this.fbB=tFB;
-    }
+
+    // blit to screen using A, then swap A/B
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,this.canvas.width,this.canvas.height);
+    const blit = this.sceneProg['waveformLine'] || link(gl, VS, FS_MORPH); // reuse simple program to draw a full-screen quad
+    gl.useProgram(blit);
+    const u=(n:string)=>gl.getUniformLocation(blit!,n);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.texA!); if(u('uFrom')) gl.uniform1i(u('uFrom')!,0);
+    const a=gl.getAttribLocation(blit!,'aPos'); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad!); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
+    gl.drawArrays(gl.TRIANGLES,0,6);
+
+    const tTex=this.texA; this.texA=this.texB; this.texB=tTex;
+    const tFB=this.fbA; this.fbA=this.fbB; this.fbB=tFB;
   }
 
-  private drawServer(t:number, level:number, offscreen=false){
-    const gl=this.gl!; const p=this.serverProg; if(!p){ this.drawClassic('barsPro',t,level); return; }
+  private async loadServerShader(type?:string){
+    const params=new URLSearchParams(); if(type) params.set('type',type); params.set('ts',Date.now().toString());
+    const base = httpBase();
+    const url = `${base}/api/shader/next?${params.toString()}`;
+    const r=await fetch(url,{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status);
+    const s = (await r.json()) as ServerShader;
+    const gl=this.gl!;
+    try{
+      const p = link(gl, VS, s.code);
+      this.serverProg = p;
+      gl.useProgram(p);
+      // minimal known uniforms
+      const uni = (n:string)=>gl.getUniformLocation(p,n);
+      const uS=uni('uStreamTex'); if(uS) gl.uniform1i(uS,this.streamUnit);
+    }catch(err){ console.error('[ServerShader] compile/link failed:', err); }
+  }
+
+  private drawServer(t:number){
+    const gl=this.gl!; const p=this.serverProg; if(!p){ this.drawClassic('barsPro',t); return; }
     gl.useProgram(p);
     const set=(n:string,v:any,kind:'1f'|'2f'|'1i')=>{ const u=gl.getUniformLocation(p,n); if(!u)return; (gl as any)[`uniform${kind}`](u,...(Array.isArray(v)?v:[v])); };
     set('uTime',t,'1f'); set('uRes',[this.canvas.width,this.canvas.height],'2f');
-    set('uLevel',level,'1f');
-    const uBands=gl.getUniformLocation(p,'uBands'); if(uBands) gl.uniform1fv(uBands,new Float32Array(this.bands.map(b=>Math.min(1,b*1.6))));
-    const uPulse=gl.getUniformLocation(p,'uPulse'); if(uPulse) gl.uniform1f(uPulse, Math.min(1, this.env*1.8));
-    const uBeat=gl.getUniformLocation(p,'uBeat'); if(uBeat) gl.uniform1f(uBeat, Math.min(1, this.beat*2.0));
-    const uImpact=gl.getUniformLocation(p,'uImpact'); if(uImpact) gl.uniform1f(uImpact, Math.min(2.0,this.impact));
-    for(const ttex of this.serverTextures){ gl.activeTexture(gl.TEXTURE0+ttex.unit); gl.bindTexture(gl.TEXTURE_2D,ttex.tex); }
-    gl.activeTexture(gl.TEXTURE0 + this.streamUnit); gl.bindTexture(gl.TEXTURE_2D,this.streamTex!); const uS=gl.getUniformLocation(p,'uStreamTex'); if(uS) gl.uniform1i(uS,this.streamUnit);
-    const atlas=this.serverTextures.find(t=>t.meta && t.meta.gridCols && t.meta.gridRows);
-    if (atlas?.meta){ const frames=atlas.meta.frames ?? (atlas.meta.gridCols!*atlas.meta.gridRows!); const fps=atlas.meta.fps ?? 24; const frame=Math.floor(t*fps)%Math.max(1,frames);
-      this.serverUniforms['uAtlasGrid'] && gl.uniform2f(this.serverUniforms['uAtlasGrid']!, atlas.meta.gridCols!, atlas.meta.gridRows!);
-      this.serverUniforms['uAtlasFrames']&& gl.uniform1f(this.serverUniforms['uAtlasFrames']!, frames);
-      this.serverUniforms['uAtlasFPS']   && gl.uniform1f(this.serverUniforms['uAtlasFPS']!, fps);
-      this.serverUniforms['uFrame']      && gl.uniform1f(this.serverUniforms['uFrame']!, frame);
-    }
+    set('uLevel',this.level,'1f'); set('uBeat',this.beat,'1f');
+    set('uLow',this.kick,'1f'); set('uMid',this.snare,'1f'); set('uAir',this.hat,'1f');
+    set('uImpact', Math.min(2.0,this.impact), '1f');
+    gl.activeTexture(gl.TEXTURE0 + this.streamUnit); gl.bindTexture(gl.TEXTURE_2D,this.streamTex!);
     const loc=gl.getAttribLocation(p,'aPos'); gl.bindBuffer(gl.ARRAY_BUFFER,this.quad!); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
     gl.drawArrays(gl.TRIANGLES,0,6);
   }
 }
-
-
-// === injected modes: strong music-reactive ===
-const beatShockwaves = {
-  name: 'beatShockwaves',
-  kind: 'fragment',
-  frag: `
-precision mediump float;
-uniform vec2  uResolution;
-uniform float uTime;
-uniform float uLevel;
-uniform float uBass;
-uniform float uAir;
-
-vec2 toUV(vec2 frag, vec2 res){
-  float s = min(res.x, res.y);
-  return (frag - 0.5*res) / s;
-}
-float ring(float d, float w){ return smoothstep(w, 0.0, abs(d)); }
-float hard(float x){ return pow(max(x,0.0), 3.0); }
-
-void main(){
-  vec2  uv   = toUV(gl_FragCoord.xy, uResolution);
-  float t    = uTime;
-  float drive = hard(uBass*1.2 + uLevel*0.8);
-
-  float r = length(uv);
-  float speed = mix(2.0, 5.0, clamp(drive, 0.0, 1.0));
-  float k = 0.0;
-
-  for(int i=0;i<3;i++){
-    float ph = t*speed - float(i)*0.9;
-    float wave = sin(12.0*r - ph*8.0);
-    float width = mix(0.12, 0.04, drive);
-    k += ring(wave, width) * mix(0.6, 1.2, drive);
-  }
-
-  float glow = exp(-4.0*dot(uv,uv)) * (0.3 + 1.5*hard(uAir));
-
-  vec3 col = vec3(0.02);
-  col += k * vec3(0.1, 0.9, 0.9);
-  col += glow * vec3(1.0, 0.2, 0.7);
-
-  float v = smoothstep(1.1, 0.3, length(uv));
-  col *= v;
-
-  gl_FragColor = vec4(col, 1.0);
-}
-`
-};
-
-const particleBurstGrid = {
-  name: 'particleBurstGrid',
-  kind: 'fragment',
-  frag: `
-precision mediump float;
-uniform vec2  uResolution;
-uniform float uTime;
-uniform sampler2D uBandsTex;
-
-vec2 uvN(vec2 frag, vec2 res){
-  float s = min(res.x, res.y);
-  return (frag - 0.5*res)/s;
-}
-float h1(float x){ return fract(sin(x*12.3456)*43758.5453); }
-float softDisc(vec2 p, float r, float blur){
-  float d = length(p) - r;
-  return smoothstep(blur, 0.0, -d);
-}
-
-void main(){
-  vec2  uv = uvN(gl_FragCoord.xy, uResolution);
-  float t  = uTime;
-
-  vec3 col = vec3(0.0);
-  int NX=6; int NY=4;
-  float s = 0.6;
-
-  for(int iy=0; iy<4; iy++){
-    for(int ix=0; ix<6; ix++){
-      int idx = iy*6 + ix;
-      float fx = float(ix);
-      float fy = float(iy);
-
-      vec2 base = vec2(
-        mix(-s, s, (fx+0.5)/float(NX)),
-        mix(-s*0.75, s*0.75, (fy+0.5)/float(NY))
-      );
-
-      float bandU = (float(idx)+0.5)/24.0;
-      float band  = texture2D(uBandsTex, vec2(bandU, 0.5)).r;
-
-      float j = h1(float(idx)*3.1);
-      vec2 jitter = 0.04*vec2(sin(t*1.3 + j*6.28), cos(t*1.7 + j*6.28));
-
-      float radius = mix(0.015, 0.08, band);
-      float alpha  = pow(band, 3.0) * 2.2;
-
-      float d = softDisc(uv - (base + jitter), radius, 0.02);
-      vec3  orb = vec3(0.6, 0.9, 1.0);
-      vec3  rim = vec3(0.1, 0.6, 1.2);
-
-      col += alpha * (d*orb + d*d*rim);
-    }
-  }
-
-  col += 0.03 * smoothstep(1.2, 0.3, length(uv));
-  gl_FragColor = vec4(col, 1.0);
-}
-`
-};
-// === end injected modes ===

@@ -48,12 +48,16 @@ document.addEventListener('DOMContentLoaded', () => {
   root.innerHTML = '';
   root.appendChild(shell);
 
-  const viz = new Visualizer(canvas);
   const statusEl = document.getElementById('status') as HTMLDivElement;
   const btnStart = document.getElementById('btnStart') as HTMLButtonElement;
   const btnStop  = document.getElementById('btnStop')  as HTMLButtonElement;
   const btnDemo  = document.getElementById('btnDemo')  as HTMLButtonElement;
   const btnPause = document.getElementById('btnPause') as HTMLButtonElement;
+
+  const viz = new Visualizer(canvas, {
+    onStatus: (s) => { statusEl.textContent = s; },
+    onFps: (fps) => { /* optionally show fps */ }
+  });
 
   const setPauseLabel = () => {
     btnPause.textContent = viz.isPaused() ? 'Resume rotation (P)' : 'Pause rotation (P)';
@@ -86,4 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
   ro.observe(main);
 
   setPauseLabel();
+
+  // Start the render loop (and fetch server shader)
+  viz.start().catch(err => console.error(err));
 });
