@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <li>Use <b>Chrome</b> or <b>Edge</b> for best results</li>
       <li><b>Best compatibility:</b> choose <b>Entire Screen</b> and tick <b>Share audio</b> (DRM tabs often block audio)</li>
       <li>Select the tab/window you want visualised</li>
-      <li>Press <b>M</b> (or 1–0) to switch visualisations</li>
+      <li>Press <b>M</b> (or 1–5) to switch visualisations</li>
     </ol>
     <div class="built-by">built by <a href="https://github.com/simon-hirst" target="_blank" rel="noreferrer">github.com/simon-hirst</a></div>
   `;
