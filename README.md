@@ -1,7 +1,6 @@
-# QuantumSynth Ultimate \u2014 Neural Edition
+# QuantumSynth Ultimate — Neural Edition
 
-Beautiful, **music-reactive** WebGL visuals that run in your browser.
-Point it at any audio (use screen-share with "Share audio"), and QuantumSynth paints the sound with elegant, performance-friendly shaders.
+Beautiful, **music-reactive** WebGL visuals that run in your browser. Point it at any audio (use screen-share with "Share audio"), and QuantumSynth paints the sound with elegant, performance-friendly shaders.
 
 **Live demo:**
 👉 https://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io
@@ -10,12 +9,12 @@ Point it at any audio (use screen-share with "Share audio"), and QuantumSynth pa
 
 ## Highlights
 
-- **Tasteful, reactive presets** \u2014 five hand-picked scenes that feel alive:
-  - `auroraFlow` \u2014 silky aurora curtains driven by bass & highs
-  - `liquidSpectrum` \u2014 domain-warped fluid with musical contour lines
-  - `neonParticles` \u2014 drifting neon bokeh that swells on the beat
-  - `ribbonWaves` \u2014 glossy ribbon fields locked to the waveform
-  - `glassCells` \u2014 animated cells with spec-contour glow
+- **Tasteful, reactive presets** — five hand-picked scenes that feel alive:
+  - `auroraFlow` — silky aurora curtains driven by bass & highs
+  - `liquidSpectrum` — domain-warped fluid with musical contour lines
+  - `neonParticles` — drifting neon bokeh that swells on the beat
+  - `ribbonWaves` — glossy ribbon fields locked to the waveform
+  - `glassCells` — animated cells with spec-contour glow
 - **Audio-aware**: bass/mid/air bands, beat/impact detection, light AGC
 - **Zero config** front-end: open the page, hit **Start Screen Sharing**, and vibe
 - **Server shader** support: hot-load a server-provided shader for experiments
@@ -39,16 +38,16 @@ Now:
 
 1. Click **Start Screen Sharing**
 2. Select **Entire Screen** and **tick "Share audio"** (tabs with DRM often block audio)
-3. Press **M** to cycle visuals or use **1\u20135** to pick a scene
+3. Press **M** to cycle visuals or use **1–5** to pick a scene
 
 ---
 
 ## Controls
 
-- **M** \u2014 next scene
-- **1\u20135** \u2014 directly select a scene
-- **P** \u2014 pause/resume auto-rotation
-- **S** \u2014 show the server shader once (not in rotation)
+- **M** — next scene
+- **1–5** — directly select a scene
+- **P** — pause/resume auto-rotation
+- **S** — show the server shader once (not in rotation)
 - Side buttons: Start Screen Sharing, Stop, Demo Mode, Pause rotation
 
 ---
@@ -91,8 +90,8 @@ export const BACKEND_CONFIG = {
 
 Helpers used by the visualizer:
 
-- `httpBase()` \u2192 builds `http(s)://host`
-- `wsUrl(path)` \u2192 builds `ws(s)://host/path`
+- `httpBase()` → builds `http(s)://host`
+- `wsUrl(path)` → builds `ws(s)://host/path`
 
 > The server may provide an experimental shader at `/api/shader/next`.
 > Press **S** in the UI to preview it (not added to scene rotation).
@@ -104,7 +103,7 @@ Helpers used by the visualizer:
 ```bash
 cd frontend
 npm run build
-# outputs to frontend/dist \u2014 deploy as static assets behind any CDN/web server
+# outputs to frontend/dist — deploy as static assets behind any CDN/web server
 ```
 
 If front-end and back-end are on different origins, ensure **CORS** and **WS** are allowed from your front-end host.
@@ -121,10 +120,10 @@ If front-end and back-end are on different origins, ensure **CORS** and **WS** a
   Update your browser/GPU drivers; ensure WebGL2 is enabled. Try Chrome/Edge.
 
 - **White/black screen**
-  Open DevTools \u2192 Console. Shader compile/link errors will show there.
+  Open DevTools → Console. Shader compile/link errors will show there.
 
 - **Server shader shows nothing**
-  The server endpoint may not be returning a valid fragment shader. Press **1\u20135** to return to built-in scenes.
+  The server endpoint may not be returning a valid fragment shader. Press **1–5** to return to built-in scenes.
 
 ---
 
@@ -135,7 +134,7 @@ PRs welcome! Focus areas that help the most:
 - Performance wins on lower-end GPUs
 - Accessibility & UX polish
 
-Please keep presets tasteful\u2014avoid eye-searing strobes or dated "ring/glow" looks.
+Please keep presets tasteful—avoid eye-searing strobes or dated "ring/glow" looks.
 
 ---
 
