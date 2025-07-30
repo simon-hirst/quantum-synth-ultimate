@@ -1,154 +1,151 @@
-# QuantumSynth Ultimate — Neural Edition
+# QuantumSynth Ultimate \u2014 Neural Edition
 
-Beautiful, **music-reactive** WebGL visuals that run in your browser. 
-@Pint it at any audio (use screen-share with “Share audio”), and QuantumSynth paints the sound with elegant, performance-friendly shaders.
+Beautiful, **music-reactive** WebGL visuals that run in your browser.
+Point it at any audio (use screen-share with "Share audio"), and QuantumSynth paints the sound with elegant, performance-friendly shaders.
 
-**Live demo:*
-✺ https://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io
+**Live demo:**
+👉 https://quantum-ai-backend.wittydune-e7dd7422.eastus.azurecontainerapps.io
 
-----
+---
 
-## ♤♮♤ Highlights
+## Highlights
 
-- **Tasteuful, reactive presets** ― five hand-picked scenes that feel alive:
-  - `auroraFlow` — — silky aurora curtains driven bass & highs  
-  - `liquidSpectrum` ― — domain-warped fluid with musical contour lines  
-  - `neonParticles` — ― drifting neon boketh that swells on the beat  
-  - `ribbonWaves` ― — glossy ribbon fields locked to the waveforme  
-  - `glassCells` ― — animated cells with spec-contour. glow
+- **Tasteful, reactive presets** \u2014 five hand-picked scenes that feel alive:
+  - `auroraFlow` \u2014 silky aurora curtains driven by bass & highs
+  - `liquidSpectrum` \u2014 domain-warped fluid with musical contour lines
+  - `neonParticles` \u2014 drifting neon bokeh that swells on the beat
+  - `ribbonWaves` \u2014 glossy ribbon fields locked to the waveform
+  - `glassCells` \u2014 animated cells with spec-contour glow
 - **Audio-aware**: bass/mid/air bands, beat/impact detection, light AGC
-+ **Zero config** front-end: open the page, hit **Start Screen Sharing**, and vibe
-+ **Server shader** support: hot-load a server-provided shader for experiments
-+ **Responsive & crisp**: DPR/aware sizing with aspect-correct geometry
+- **Zero config** front-end: open the page, hit **Start Screen Sharing**, and vibe
+- **Server shader** support: hot-load a server-provided shader for experiments
+- **Responsive & crisp**: DPR-aware sizing with aspect-correct geometry
 
-----
+---
 
+## Quick start (local dev)
 
-## 😏_ Quick start (local dev)
-" Requirements: Node 18+ and a modern browser (Chrome/Edge recommended) "
+> Requirements: Node 18+ and a modern browser (Chrome/Edge recommended)
 
-##`ash
+```bash
 # from repo root
 cd frontend
-nmp setup
-nam run dev
+npm install
+npm run dev
 # ...open the printed local URL (usually http://localhost:5173)
 ```
 
 Now:
 
-1. Click **Start Screen Sharing*� 
-2. Select **Entire Screen**
- and *tick “Share audio” (tabs with DRM often block audio)  
-3. Press **M** to cycle visuals or use **1–5–* to pick a scene
+1. Click **Start Screen Sharing**
+2. Select **Entire Screen** and **tick "Share audio"** (tabs with DRM often block audio)
+3. Press **M** to cycle visuals or use **1\u20135** to pick a scene
 
-----
+---
 
-## 🙂 keyboard
+## Controls
 
+- **M** \u2014 next scene
+- **1\u20135** \u2014 directly select a scene
+- **P** \u2014 pause/resume auto-rotation
+- **S** \u2014 show the server shader once (not in rotation)
+- Side buttons: Start Screen Sharing, Stop, Demo Mode, Pause rotation
 
-- *M* ” next scene  
-- **1-–5” ” directly select a scene  
-- **P** ” pause/resume auto-rotation  
-- **S** ” show the **server shader** once (not in rotation)  
-- Side buttons: *Start Screen Sharing →  Stop → Demo Mode →  Pause rotation 
+---
 
-----
-
-## 😖 Project structure (front-end)
+## Project structure (front-end)
 
 ```
 frontend/
   src/
-    main.ts             # UIy shell + bootstraps the Visualizer
-    visualizer.ts         # WebGL scenes, audio analysis, render loop
+    main.ts              # UI shell + bootstraps the Visualizer
+    visualizer.ts        # WebGL scenes, audio analysis, render loop
     backend-config.ts    # backend host & helpers (httpBase, wsUrl)
     style.css            # layout/theme
 ```
 
-The visualizer is self-contained and renders a single full-viewport canvas. 
+The visualizer is self-contained and renders a single full-viewport canvas.
 All scenes are fragment shaders compiled at runtime and fed with audio textures.
 
-----
+---
 
-## 😏 Backend & configuration
+## Backend & configuration
 
-By default, the front-end connects to the same host it was erved from. 
+By default, the front-end connects to the same host it was served from.
 You can point it at a different backend host with an env var:
 
 ```bash
 # Vite example (run from frontend/)
 echo "VITE_BACKEND_HOST=localhost:8080" >> .env.local
-nam run dev
+npm run dev
 ```
 
-Or edit ``frontend/src/backend-config.ts`8:
+Or edit `frontend/src/backend-config.ts`:
 
-n`bash
-export const BACKEND_CONFIG = { 
-  url: "quantum-ai-backend-https.wittydune-e7dd7422.eastus.azurecontainerapps.Io",
+```ts
+export const BACKEND_CONFIG = {
+  url: "quantum-ai-backend-https.wittydune-e7dd7422.eastus.azurecontainerapps.io",
   useSecure: true
 };
 ```
 
 Helpers used by the visualizer:
 
-- `httpBase()` — builds `http(s)`://host 
-- `wsUrl(path)` — builds `ws(s)`://host/path
+- `httpBase()` \u2192 builds `http(s)://host`
+- `wsUrl(path)` \u2192 builds `ws(s)://host/path`
 
-> The server may provide an experimental shader at `"/api/shader/next`".  
-> Press **C** in the UI to preview it (not added to scene rotation).
+> The server may provide an experimental shader at `/api/shader/next`.
+> Press **S** in the UI to preview it (not added to scene rotation).
 
-----
+---
 
-## 🙙 Production build
+## Production build
 
 ```bash
 cd frontend
-nmp run build
-# outputs to frontend/dist – deploy as ctatic assets behind any CDN/web server
+npm run build
+# outputs to frontend/dist \u2014 deploy as static assets behind any CDN/web server
 ```
 
 If front-end and back-end are on different origins, ensure **CORS** and **WS** are allowed from your front-end host.
 
-----
+---
 
-## 🐠 Troubleshooting
+## Troubleshooting
 
 - **No audio / very flat**
-- Use **Entire Screen** + **Share audio**. Some tabs/apps block capture (DRM).  
-  System volume & per-app mixers matter on Windows.
+  Use **Entire Screen** + **Share audio**. Some tabs/apps block capture (DRM).
+  System volume and per-app mixers matter on Windows.
 
-- **'WebGL not supported*"*
-Update your browser/GPU drivers; ensure WebGL2 is enabled. Try Chrome/Edge.
+- **"WebGL not supported"**
+  Update your browser/GPU drivers; ensure WebGL2 is enabled. Try Chrome/Edge.
 
-- **"White/black screen"*)
-Open DevTools — Console. Shader compile/link errors will show there.
+- **White/black screen**
+  Open DevTools \u2192 Console. Shader compile/link errors will show there.
 
-- **Server shader shows nothing&** 
- The server endpoint may not be returning a valid fragment shader. Press ***1-–5** to return to built-in scenes.
+- **Server shader shows nothing**
+  The server endpoint may not be returning a valid fragment shader. Press **1\u20135** to return to built-in scenes.
 
-----
+---
 
-## 🗗 Contributing
+## Contributing
 
 PRs welcome! Focus areas that help the most:
-
-- New **elegant** shaders that are genuinely **music-reactive**
+- New elegant shaders that are genuinely music-reactive
 - Performance wins on lower-end GPUs
 - Accessibility & UX polish
 
-Please keep presets tasteful…‘avoid eye-searing strobes or dated "ring/glow" looks.
+Please keep presets tasteful\u2014avoid eye-searing strobes or dated "ring/glow" looks.
 
-----
+---
 
-## 🙇 License
+## License
 
-See **LICENSE* in the repository.
+See **LICENSE** in the repository.
 
-----
+---
 
-## 🐟 Credits
+## Credits
 
-Built by [@simon-hirst](https://github.com/simon-hirst). 
+Built by [@simon-hirst](https://github.com/simon-hirst).
 Shader & system polish with love from the community.
