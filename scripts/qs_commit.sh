@@ -1,95 +1,124 @@
 #!/usr/bin/env bash
-# File: scripts/qs_commit.sh
+# qs_commit.sh — fair 50/50 commit dating (UTC)
+#
 # Usage:
-#   scripts/qs_commit.sh "feat(frontend): wire VITE_BACKEND_HOST" [--all] [files...]
-# Notes:
-# - Implements your dating rule per commit.
-# - If --all is passed, runs `git add -A`. Otherwise, adds the listed files.
-# - Aborts if there are no staged changes (so you don’t create empty commits by accident).
+#   scripts/qs_commit.sh "your message" [extra git commit args...]
+#
+# Policy:
+#  - Look at the previous commit date (UTC).
+#  - 50% chance: same calendar day, with a strictly later time on that day.
+#  - 50% chance: add 1–7 days, random time of day.
+#  - Always advance time vs. previous commit; never go backwards.
 
 set -euo pipefail
 
-msg="${1:-}"
-shift || true
-
-if [[ -z "$msg" ]]; then
-  echo "Commit message required"
+if [[ $# -lt 1 ]]; then
+  echo "Usage: scripts/qs_commit.sh \"message\" [extra git commit args...]"
   exit 1
 fi
 
-stage_all=false
-if [[ "${1:-}" == "--all" ]]; then
-  stage_all=true
-  shift || true
+msg=$1; shift || true
+
+# ---------- RNG helpers (robust across shells/OS) ----------
+rand_u16() {
+  # Returns a 0..65535 integer using /dev/urandom or fallbacks.
+  if [[ -r /dev/urandom ]] && command -v od >/dev/null 2>&1; then
+    od -An -N2 -tu2 /dev/urandom | tr -d ' ' || true
+  elif command -v hexdump >/dev/null 2>&1 && [[ -r /dev/urandom ]]; then
+    hexdump -n 2 -e '1/2 "%u"' /dev/urandom || true
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - <<'PY' || true
+import random
+print(random.randrange(0,65536))
+PY
+  elif command -v node >/dev/null 2>&1; then
+    node -e 'console.log(Math.floor(Math.random()*65536))' || true
+  else
+    # $RANDOM is Bash-specific; range 0..32767 — combine two calls
+    echo $(( (RANDOM<<1) ^ RANDOM ))
+  fi
+}
+
+rand_between() {
+  local min=$1 max=$2
+  local span=$((max - min + 1))
+  local n
+  n=$(rand_u16)
+  # Fallback if RNG somehow failed
+  if [[ -z "${n}" ]]; then n=0; fi
+  echo $(( min + (n % span) ))
+}
+
+random_hms() {
+  # Returns HH:MM:SS (00..23, 00..59, 00..59)
+  local hh mm ss
+  hh=$(rand_between 0 23)
+  mm=$(rand_between 0 59)
+  ss=$(rand_between 0 59)
+  printf "%02d:%02d:%02d" "$hh" "$mm" "$ss"
+}
+
+# ---------- Find previous commit date (UTC) ----------
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  :
+else
+  echo "❌ Not a git repository"; exit 1
 fi
 
-if $stage_all; then
-  git add -A
-else
-  if [[ "$#" -gt 0 ]]; then
-    git add "$@"
+last_iso=$(git log -1 --format=%cI 2>/dev/null || true)
+if [[ -z "${last_iso}" ]]; then
+  # First commit in repo: just use now (UTC) for baseline.
+  last_iso=$(date -u -Iseconds)
+fi
+
+# Convert to epoch (UTC) and extract Y-M-D (UTC)
+last_epoch=$(date -u -d "${last_iso}" +%s)
+last_day=$(date -u -d "${last_iso}" +%F)
+# End of that UTC day (23:59:59)
+last_eod_epoch=$(date -u -d "${last_day} 23:59:59" +%s)
+
+# ---------- 50/50 decision ----------
+coin=$(( $(rand_u16) % 2 ))   # 0 or 1
+advance_days=0
+commit_epoch=
+
+if [[ "${coin}" -eq 0 ]]; then
+  # SAME DAY path — choose a time strictly after last_epoch, within the same day
+  # If we're at/after end-of-day (very unlikely), fall back to +1..7 days.
+  if (( last_epoch < last_eod_epoch )); then
+    # Choose offset between 1 second and (last_eod_epoch - last_epoch)
+    max_delta=$(( last_eod_epoch - last_epoch ))
+    add_sec=$(rand_between 1 "${max_delta}")
+    commit_epoch=$(( last_epoch + add_sec ))
+  else
+    advance_days=$(rand_between 1 7)
   fi
 fi
 
-# Ensure there is something to commit
-if git diff --cached --quiet; then
-  echo "No staged changes to commit."
-  exit 1
-fi
-
-# Read last commit date (committer date, ISO 8601). If none, use now.
-last_iso="$(git log -1 --format=%cI 2>/dev/null || true)"
-if [[ -z "$last_iso" ]]; then
-  last_iso="$(date -Iseconds)"
-fi
-
-# Helpers
-rand_between() { # inclusive
-  local lo="$1" hi="$2"
-  echo $(( lo + RANDOM % (hi - lo + 1) ))
-}
-
-iso_to_epoch() {
-  date -d "$1" +%s
-}
-
-epoch_to_iso() {
-  date -Iseconds -d "@$1"
-}
-
-# Decide same-day vs +days (50/50)
-same_day=$(( RANDOM % 2 ))   # 0 or 1
-
-last_epoch="$(iso_to_epoch "$last_iso")"
-last_day="$(date -d "$last_iso" +%Y-%m-%d)"
-
-if [[ "$same_day" -eq 1 ]]; then
-  # Same calendar date, but later time (add 5–180 mins, clamped to day end)
-  add_mins="$(rand_between 5 180)"
-  candidate_epoch=$(( last_epoch + add_mins * 60 ))
-
-  # End of last_day at 23:59:59 (local time)
-  day_end_epoch="$(iso_to_epoch "${last_day}T23:59:59")"
-  if (( candidate_epoch > day_end_epoch )); then
-    candidate_epoch=$(( day_end_epoch - $(rand_between 1 30) )) # keep it just before midnight
-    if (( candidate_epoch <= last_epoch )); then
-      candidate_epoch=$(( last_epoch + 60 )) # ensure strictly after
-    fi
+if [[ -z "${commit_epoch}" ]]; then
+  # +[1..7] DAYS path — pick a random time of day
+  if [[ "${advance_days}" -eq 0 ]]; then
+    advance_days=$(rand_between 1 7)
   fi
-  new_iso="$(epoch_to_iso "$candidate_epoch")"
-else
-  # Advance by 1–7 days; random clock time
-  add_days="$(rand_between 1 7)"
-  new_day="$(date -d "${last_day} +${add_days} days" +%Y-%m-%d)"
-  hh="$(printf "%02d" "$(rand_between 9 22)")"
-  mm="$(printf "%02d" "$(rand_between 0 59)")"
-  ss="$(printf "%02d" "$(rand_between 0 59)")"
-  new_iso="${new_day}T${hh}:${mm}:${ss}"
+  base_day_epoch=$(date -u -d "${last_day} 00:00:00" +%s)
+  target_day_epoch=$(( base_day_epoch + (advance_days*86400) ))
+  # random time of day
+  hhmmss=$(random_hms)
+  commit_epoch=$(date -u -d "@${target_day_epoch}" +%s)
+  # add time-of-day seconds
+  h=${hhmmss:0:2}; m=${hhmmss:3:2}; s=${hhmmss:6:2}
+  tod=$((10#$h*3600 + 10#$m*60 + 10#$s))
+  commit_epoch=$(( commit_epoch + tod ))
+  # ensure strictly after last commit
+  if (( commit_epoch <= last_epoch )); then
+    commit_epoch=$(( last_epoch + 1 ))
+  fi
 fi
 
-# Commit with controlled dates
-GIT_AUTHOR_DATE="$new_iso" \
-GIT_COMMITTER_DATE="$new_iso" \
-git commit -m "$msg"
+commit_iso=$(date -u -d "@${commit_epoch}" +"%Y-%m-%dT%H:%M:%SZ")
 
-echo "✔ committed with date: $new_iso"
+GIT_AUTHOR_DATE="${commit_iso}" \
+GIT_COMMITTER_DATE="${commit_iso}" \
+git commit -m "${msg}" "$@"
+
+echo "🕒 Dated commit at ${commit_iso} (UTC)"
