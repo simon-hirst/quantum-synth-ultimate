@@ -1,8 +1,9 @@
 /**
- * QuantumSynth Visualizer — Classics + Morph
- * - 10 scenes: 5 modern (amped) + 5 tasteful classics
- * - Stronger audio coupling (bass/mid/air, beat, impact, AGC)
- * - Clean morph transition: edge-guided advection from old → new
+ * QuantumSynth Visualizer — Plasma Orb + Boosted Reactivity
+ * - New scene: plasmaOrb (glowing orb with vibrating, audio-reactive edge)
+ * - Rotation: plasmaOrb + 9 others (modern + classics)
+ * - Strong audio coupling (AGC tweaked, bigger multipliers)
+ * - Clean morph transition remains (edge-guided advection)
  * - Keys: M next • 1–0 choose • P pause • S server (one-off preview)
  */
 
@@ -80,7 +81,63 @@ float waveAt(float x){
 
 /* ================= Modern scenes (amped) ================= */
 
-/* 1) Aurora — stronger audio push, brighter highs */
+/* Plasma ORB — high-reactivity glowing orb with vibrating edge & ripples */
+const FS_PLASMA_ORB = `
+${PRELUDE}${NOISE}${AUDIO_UNI}
+float ring(float d, float w){ return smoothstep(w, 0.0, abs(d)); }
+void main(){
+  vec2 uv=vUV; vec2 p=toAspect(uv);
+  float t=uTime;
+
+  float r=length(p)+1e-5;
+  float ang=atan(p.y,p.x);
+  float spec = 0.6*specAt(fract((ang+3.14159)/6.28318)) + 0.4*specAt(sat(r));
+  float wave = waveAt(fract(0.5*(p.x+1.0)));
+
+  // Domain warp with mid/highs
+  float warpAmp = 0.18 + 0.55*uMid + 0.35*uAir;
+  vec2 w = p;
+  w += warpAmp * vec2(fbm(p*3.2 + vec2(0.0,t*0.7)), fbm(p*3.1 + vec2(t*0.8,0.0)));
+
+  // Orb base radius breathing with bass + impact
+  float baseR = 0.48 - 0.06*uLow - 0.03*uImpact;
+
+  // Vibrating edge by spectrum & waveform
+  float edgeVibe = 0.06*(spec*1.8 + wave*1.2) + 0.035*uAir;
+  float edge = ring(r - (baseR + 0.04*sin(ang*8.0 + t*2.0) + 0.10*fbm(w*2.2)), 0.06 + 0.035*uImpact) *
+               (0.9 + 1.6*uLevel + 0.8*uImpact);
+
+  // Beat ripples that travel outward
+  float speed = 3.0 + 7.0*uLow + 2.0*uAir;
+  float ripple = 0.0;
+  for(int i=0;i<3;i++){
+    float ph = t*speed - float(i)*0.7 - uBeat*0.6;
+    ripple += ring( sin(12.0*r - ph*7.0), 0.10 - 0.03*uImpact );
+  }
+  ripple *= (0.25 + 1.6*uBeat + 0.9*uImpact);
+
+  // Inner glow and swirling core
+  float swirl = fbm(rot(w, t*0.25 + uLow*0.9)*2.0);
+  float core = smoothstep(0.75, 0.0, r/baseR) * (0.4 + 2.0*uLevel + 1.0*uLow);
+
+  // Color — tasteful cyan→magenta palette modulated by swirl & spectrum
+  vec3 ink = mix(vec3(0.15,1.0,1.1), vec3(1.0,0.55,1.1), sat(0.5 + 0.5*swirl + 0.4*spec));
+  vec3 col = vec3(0.02);
+  col += ink * (edge*1.1 + ripple*0.8);
+  col += vec3(0.15,0.35,0.6) * core;
+  col += 0.35*ink * pow(sat(1.0-r/baseR), 3.0) * (0.6 + 1.6*uMid);
+
+  // Soft glow halo
+  float halo = exp(-pow(r*2.2, 2.0)) * (0.3 + 1.7*uLow + 0.8*uImpact);
+  col += vec3(0.2,0.9,1.1)*halo;
+
+  col *= vignette(uv);
+  gl_FragColor = vec4(col,1.0);
+}
+`;
+
+/* Existing modern + classics, tuned a touch hotter */
+
 const FS_AURORA = `
 ${PRELUDE}${NOISE}${AUDIO_UNI}
 void main(){
@@ -100,7 +157,6 @@ void main(){
 }
 `;
 
-/* 2) Liquid — more contours, beats pop */
 const FS_LIQUID = `
 ${PRELUDE}${NOISE}${AUDIO_UNI}
 float ridge(float x, float w){ return smoothstep(w, 0.0, abs(x)); }
@@ -126,7 +182,6 @@ void main(){
 }
 `;
 
-/* 3) Neon Particles — more size/alpha on beat/impact */
 const FS_NEON_PARTICLES = `
 ${PRELUDE}${AUDIO_UNI}
 float softDisc(vec2 p, float r, float blur){ return smoothstep(blur, 0.0, length(p)-r); }
@@ -152,7 +207,6 @@ void main(){
 }
 `;
 
-/* 4) Ribbon Waves — thicker & brighter with waveform */
 const FS_RIBBONS = `
 ${PRELUDE}${AUDIO_UNI}
 float linstep(float a,float b,float x){ return clamp((x-a)/(b-a), 0.0, 1.0); }
@@ -177,7 +231,6 @@ void main(){
 }
 `;
 
-/* 5) Glass Cells — tighter edges, more glow on mid */
 const FS_GLASS_CELLS = `
 ${PRELUDE}${NOISE}${AUDIO_UNI}
 vec2 voronoi(vec2 p){
@@ -207,8 +260,7 @@ void main(){
 }
 `;
 
-/* ================= Five tasteful "classic" scenes ================= */
-
+/* Classics (from previous pass) */
 const FS_CLASSIC_BARS = `
 ${PRELUDE}${AUDIO_UNI}
 void main(){
@@ -293,7 +345,6 @@ ${PRELUDE}
 uniform sampler2D uFrom, uTo;
 uniform float uProgress, uBeat, uImpact;
 uniform vec3 uBands; // x:low, y:mid, z:air
-vec3 toRGB(vec4 c){ return c.rgb; }
 float luma(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }
 vec2 sobel(sampler2D t, vec2 uv, vec2 px){
   float tl=luma(texture2D(t, uv+px*vec2(-1.0,-1.0)).rgb);
@@ -330,7 +381,7 @@ void main(){
   float carryA = featA * (1.0 - p);
   float carryB = featB * p;
   float w = smoothstep(0.0,1.0, p + 0.25*(carryB - carryA)) + 0.18*uBeat;
-  w = min(max(w, 0.0), 1.0);
+  w = clamp(w, 0.0, 1.0);
   vec3 glow = vec3(0.06,0.04,0.10) * (uBeat*0.7 + uImpact*0.35);
   vec3 col = mix(colA, colB, w) + glow;
   gl_FragColor = vec4(col,1.0);
@@ -357,7 +408,7 @@ export class Visualizer {
 
   // audio metrics
   private level=0; private beat=0; private impact=0; private low=0; private mid=0; private air=0;
-  private agc=0.65;
+  private agc=0.70; // slightly higher target gain
 
   // audio textures
   private specTex: WebGLTexture | null = null;
@@ -378,8 +429,8 @@ export class Visualizer {
 
   // rotation
   private scenes = [
-    'auroraFlow','liquidSpectrum','neonParticles','ribbonWaves','glassCells',
-    'classicBars','classicCenterBars','classicWave','classicLissajous','classicStarfield'
+    'plasmaOrb','auroraFlow','liquidSpectrum','neonParticles','ribbonWaves',
+    'glassCells','classicBars','classicCenterBars','classicWave','classicLissajous','classicStarfield'
   ] as const;
   private sceneIdx = 0;
   private nextSwitchAt = 0;
@@ -435,6 +486,7 @@ export class Visualizer {
 
     // compile scenes
     const sources: Record<string,string> = {
+      plasmaOrb:FS_PLASMA_ORB,
       auroraFlow:FS_AURORA, liquidSpectrum:FS_LIQUID, neonParticles:FS_NEON_PARTICLES,
       ribbonWaves:FS_RIBBONS, glassCells:FS_GLASS_CELLS,
       classicBars:FS_CLASSIC_BARS, classicCenterBars:FS_CLASSIC_CENTERBARS,
@@ -510,7 +562,7 @@ export class Visualizer {
     const gl=this.gl!;
     const now=performance.now(); this.frames++; if(now-this.lastFPS>=1000){ this.opts.onFps?.(this.frames); this.frames=0; this.lastFPS=now; }
 
-    // Audio analysis + AGC (stronger)
+    // Audio analysis + AGC (hotter)
     if (this.analyser && this.freq && this.wave) {
       this.analyser.getByteFrequencyData(this.freq);
       this.analyser.getByteTimeDomainData(this.wave);
@@ -518,11 +570,11 @@ export class Visualizer {
       for(let i=0;i<N;i++){ const v=this.freq[i]/255; sum+=v*v; if(i<N*0.2) low+=v; else if(i<N*0.7) mid+=v; else air+=v; }
       low/=Math.max(1,N*0.2); mid/=Math.max(1,N*0.5); air/=Math.max(1,N*0.3);
       const rawLevel=Math.sqrt(sum/N);
-      const target=0.55; const e=target - rawLevel; this.agc += e*0.09; this.agc = Math.max(0.35, Math.min(2.5, this.agc));
-      const level = Math.min(1, rawLevel*this.agc*2.6);
+      const target=0.6; const e=target - rawLevel; this.agc += e*0.10; this.agc = Math.max(0.35, Math.min(2.6, this.agc));
+      const level = Math.min(1, rawLevel*this.agc*2.75);
       this.low = low; this.mid = mid; this.air = air; this.level = level;
-      this.impact = Math.max(0, low*1.6 + mid*0.9 + air*0.5 - 0.5);
-      this.beat = (low>0.5?0.6:0.0) + (mid>0.65?0.25:0.0);
+      this.impact = Math.max(0, low*1.7 + mid*1.0 + air*0.55 - 0.48);
+      this.beat = (low>0.5?0.7:0.0) + (mid>0.65?0.25:0.0);
 
       // Upload spec/wave textures
       const sBins=this.specBins, tmp=new Uint8Array(sBins*4); const M=this.wave.length;
@@ -617,7 +669,7 @@ export class Visualizer {
     }
   }
   private drawServer(t:number){
-    const gl=this.gl!; const p=this.serverProg; if(!p){ this.drawScene('auroraFlow',t); return; }
+    const gl=this.gl!; const p=this.serverProg; if(!p){ this.drawScene('plasmaOrb',t); return; }
     gl.useProgram(p);
     const set=(n:string,v:any,kind:'1f'|'2f'|'1i')=>{ const u=gl.getUniformLocation(p,n); if(!u)return; (gl as any)[`uniform${kind}`](u,...(Array.isArray(v)?v:[v])); };
     set('uTime',t,'1f'); set('uRes',[this.canvas.width,this.canvas.height],'2f');
