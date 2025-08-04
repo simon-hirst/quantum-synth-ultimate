@@ -85,57 +85,61 @@ float waveAt(float x){
 const FS_PLASMA_ORB = `
 ${PRELUDE}${NOISE}${AUDIO_UNI}
 float ring(float d, float w){ return smoothstep(w, 0.0, abs(d)); }
+float sat01(float x){ return clamp(x,0.0,1.0); }
 void main(){
   vec2 uv=vUV; vec2 p=toAspect(uv);
   float t=uTime;
 
+  // Polar & audio probes
   float r=length(p)+1e-5;
   float ang=atan(p.y,p.x);
-  float spec = 0.6*specAt(fract((ang+3.14159)/6.28318)) + 0.4*specAt(sat(r));
-  float wave = waveAt(fract(0.5*(p.x+1.0)));
+  float specA = specAt(fract((ang+3.14159)/6.28318));
+  float specR = specAt(sat(r));
+  float wavX  = waveAt(fract(0.5*(p.x+1.0)));
+  float wavY  = waveAt(fract(0.5*(p.y+1.0)));
 
-  // Domain warp with mid/highs
-  float warpAmp = 0.18 + 0.55*uMid + 0.35*uAir;
+  // Orb radius: breathe harder with bass/impact
+  float breathe = 0.36 + 0.75*uLow + 0.35*uImpact;
+  float baseR = 0.43 + 0.08*sin(t*2.0 + uLow*4.0) - 0.07*breathe;
+
+  // Domain warp driven by mids/highs + a bit of beat
   vec2 w = p;
-  w += warpAmp * vec2(fbm(p*3.2 + vec2(0.0,t*0.7)), fbm(p*3.1 + vec2(t*0.8,0.0)));
+  float warp = 0.22 + 0.35*uMid + 0.25*uAir + 0.20*uBeat;
+  w += warp * vec2(fbm(p*3.8 + vec2(0.0,t*0.9)), fbm(p*3.5 + vec2(t*1.1,0.0)));
+  w += 0.05*vec2(sin(ang*12.0 + t*5.0)*specA, cos(ang*10.0 - t*4.0)*specR);
 
-  // Orb base radius breathing with bass + impact
-  float baseR = 0.48 - 0.06*uLow - 0.03*uImpact;
+  // Edge vibration (spectrum+waveform) and width scales
+  float edgeNoise = 0.08*fbm(w*4.0 + vec2(t*0.8,-t*0.7)) + 0.05*(wavX+wavY);
+  float edgeWidth = 0.05 + 0.04*uImpact + 0.02*uBeat;
+  float edge = ring(r - (baseR + edgeNoise), edgeWidth) * (0.8 + 2.2*uLevel + 1.2*uImpact);
 
-  // Vibrating edge by spectrum & waveform
-  float edgeVibe = 0.06*(spec*1.8 + wave*1.2) + 0.035*uAir;
-  float edge = ring(r - (baseR + 0.04*sin(ang*8.0 + t*2.0) + 0.10*fbm(w*2.2)), 0.06 + 0.035*uImpact) *
-               (0.9 + 1.6*uLevel + 0.8*uImpact);
+  // Inner core with swirl
+  float layer = pow(sat01(baseR - r + 0.12), 2.0);
+  float swirl = fbm(rot(w, t*0.35 + uLow*1.2)*2.6);
+  float core = layer * (0.35 + 2.4*uLevel + 1.2*uLow) * (0.6 + 0.8*swirl);
 
-  // Beat ripples that travel outward
-  float speed = 3.0 + 7.0*uLow + 2.0*uAir;
+  // Beat ripples (travel outward faster on strong bass)
+  float speed = 3.4 + 8.0*uLow + 3.0*uAir;
   float ripple = 0.0;
-  for(int i=0;i<3;i++){
-    float ph = t*speed - float(i)*0.7 - uBeat*0.6;
-    ripple += ring( sin(12.0*r - ph*7.0), 0.10 - 0.03*uImpact );
+  for(int i=0;i<4;i++){
+    float ph = t*speed - float(i)*0.65;
+    ripple += ring( sin(13.0*r - ph*8.0), 0.11 - 0.03*uImpact );
   }
-  ripple *= (0.25 + 1.6*uBeat + 0.9*uImpact);
+  ripple *= (0.18 + 2.2*uBeat + 1.1*uImpact);
 
-  // Inner glow and swirling core
-  float swirl = fbm(rot(w, t*0.25 + uLow*0.9)*2.0);
-  float core = smoothstep(0.75, 0.0, r/baseR) * (0.4 + 2.0*uLevel + 1.0*uLow);
-
-  // Color — tasteful cyan→magenta palette modulated by swirl & spectrum
-  vec3 ink = mix(vec3(0.15,1.0,1.1), vec3(1.0,0.55,1.1), sat(0.5 + 0.5*swirl + 0.4*spec));
+  // Color & glow
+  vec3 ink = mix(vec3(0.12,1.0,1.1), vec3(1.0,0.55,1.05), sat(0.55 + 0.45*swirl + 0.35*specA));
   vec3 col = vec3(0.02);
-  col += ink * (edge*1.1 + ripple*0.8);
-  col += vec3(0.15,0.35,0.6) * core;
-  col += 0.35*ink * pow(sat(1.0-r/baseR), 3.0) * (0.6 + 1.6*uMid);
+  col += ink * (edge*1.15 + ripple*0.85);
+  col += vec3(0.2,0.4,0.7) * core;
 
-  // Soft glow halo
-  float halo = exp(-pow(r*2.2, 2.0)) * (0.3 + 1.7*uLow + 0.8*uImpact);
-  col += vec3(0.2,0.9,1.1)*halo;
+  float halo = exp(-pow(r*2.1, 2.0)) * (0.35 + 2.0*uLow + 0.9*uImpact + 0.5*uBeat);
+  col += vec3(0.2,0.95,1.1) * halo;
 
   col *= vignette(uv);
   gl_FragColor = vec4(col,1.0);
 }
 `;
-
 /* Existing modern + classics, tuned a touch hotter */
 
 const FS_AURORA = `
