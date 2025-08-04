@@ -4,3 +4,9 @@
 *.bash         text eol=lf
 frontend/src/*.ts  text eol=lf
 frontend/src/*.css text eol=lf
+# QS-LF — enforce LF where it matters
+* text=auto
+*.sh           text eol=lf
+*.bash         text eol=lf
+frontend/src/*.ts  text eol=lf
+frontend/src/*.css text eol=lf

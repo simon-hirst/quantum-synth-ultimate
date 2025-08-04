@@ -88,40 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
   btnStop.onclick = () => { viz.stopScreenShare(); statusEl.textContent = 'Stopped'; };
   btnDemo.onclick = () => { viz.setDemoMode(true); statusEl.textContent = 'Demo mode active'; };
   btnPause.onclick = () => { viz.togglePause(); setPauseLabel(); };
-  // injected handlers
-  const shellEl = shell;
-  btnToggleSide.onclick = () => {
-    shellEl.classList.toggle('side-collapsed');
-    btnToggleSide.textContent = shellEl.classList.contains('side-collapsed') ? '►' : '◄';
-    window.dispatchEvent(new Event('resize'));
-  };
-
-  const requestFs = async (el) => {
-    if (el.requestFullscreen) return el.requestFullscreen();
-    if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
-    if (el.msRequestFullscreen) return el.msRequestFullscreen();
-  };
-  const exitFs = async () => {
-    if (document.exitFullscreen) return document.exitFullscreen();
-    if (document.webkitExitFullscreen) return document.webkitExitFullscreen();
-    if (document.msExitFullscreen) return document.msExitFullscreen();
-  };
-
-  btnFullscreen.onclick = async () => {
-    const target = document.querySelector('.qs-main') || document.documentElement;
-    if (!document.fullscreenElement &&
-        !document.webkitFullscreenElement &&
-        !document.msFullscreenElement) {
-      await requestFs(target);
-    } else {
-      await exitFs();
-    }
-  };
-
-
-  window.addEventListener('keydown', (e) => {
-    if (e.key.toLowerCase() === 'p') { viz.togglePause(); setPauseLabel(); }
-  });
+  
 
   // Keep the canvas sized to its container
   const ro = new ResizeObserver(() => {
@@ -136,24 +103,27 @@ document.addEventListener('DOMContentLoaded', () => {
   // Start the render loop (and fetch server shader)
   viz.start().catch(err => console.error(err));
 
-  // QS008 handlers start
+  
+
+
+// QS010 handlers start
+{
   const shellEl = shell;
-  const btnToggleSide = document.getElementById('btnToggleSide') as HTMLButtonElement;
-  const btnFullscreen = document.getElementById('btnFullscreen') as HTMLButtonElement;
+  const btnToggleSide = document.getElementById('btnToggleSide') as HTMLButtonElement | null;
+  const btnFullscreen = document.getElementById('btnFullscreen') as HTMLButtonElement | null;
 
   if (btnToggleSide) {
     btnToggleSide.onclick = () => {
       shellEl.classList.toggle('side-collapsed');
       btnToggleSide.textContent = shellEl.classList.contains('side-collapsed') ? '►' : '◄';
-      // force a resize so the canvas fits new layout
       window.dispatchEvent(new Event('resize'));
     };
   }
 
   const requestFs = async (el: any) => {
     if (el.requestFullscreen) return el.requestFullscreen();
-    if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
-    if (el.msRequestFullscreen) return el.msRequestFullscreen();
+    if ((el as any).webkitRequestFullscreen) return (el as any).webkitRequestFullscreen();
+    if ((el as any).msRequestFullscreen) return (el as any).msRequestFullscreen();
   };
   const exitFs = async () => {
     if (document.exitFullscreen) return document.exitFullscreen();
@@ -173,6 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     };
   }
-  // QS008 handlers end
+}
+// QS010 handlers end
 
 });

@@ -1,26 +1,11 @@
-# === QuantumSynth temp/backups ===
-*.bak
-*.bak.*
-*.tmp
-*.log
-.hold_patch.js
-.boost_reactivity.js
-.patch_rotate.js
-fix_scene_rotation_duration.sh
-viz_hold_and_gitignore.sh
+# QuantumSynth — canonical .gitignore
 
-# Node/OS cruft
-frontend/node_modules/
-.DS_Store
-Thumbs.db
-# QuantumSynth ignores
-.purge_*.js
-.kill_boring.js
-.purge_and_lock.js
-.inline_now.js
-.DS_Store
+# Local helpers
 a.sh
+
+# Node / frontend
 node_modules/
+frontend/node_modules/
 dist/
 frontend/dist/
 .vite/
@@ -28,29 +13,25 @@ frontend/.vite/
 .parcel-cache/
 .cache/
 *.tsbuildinfo
+
+# Logs
+logs/
+*.log
 npm-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-logs/
+
+# Env files
 .env
 .env.*
 .env.local
 .env.*.local
-.idea/
-.vscode/
-*.swp
-*.orig
-*.rej
-bin/
-*.exe
-*.dll
-*.so
-*.dylib
-coverage/
 frontend/.env
 frontend/.env.*
 frontend/.env.local
 frontend/.env.*.local
+
+# Secrets / keys / creds
 *.pem
 *.key
 *.p12
@@ -66,4 +47,25 @@ id_ed25519
 secret.*
 secrets.*
 credentials.*
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Coverage
+coverage/
 .nyc_output/
