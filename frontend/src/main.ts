@@ -38,6 +38,18 @@ document.addEventListener('DOMContentLoaded', () => {
     </ol>
     <div class="built-by">built by <a href="https://github.com/simon-hirst" target="_blank" rel="noreferrer">github.com/simon-hirst</a></div>
   `;
+  // === injected: sidebar toggle + fullscreen button ===
+  const btnToggleSide = h('button', 'qs-side-toggle', '◄');
+  btnToggleSide.id = 'btnToggleSide';
+  btnToggleSide.title = 'Toggle sidebar';
+  side.prepend(btnToggleSide);
+
+  const btnFullscreen = h('button', 'qs-fullscreen', '⛶');
+  btnFullscreen.id = 'btnFullscreen';
+  btnFullscreen.title = 'Fullscreen';
+  main.appendChild(btnFullscreen);
+  // === end injected ===
+
 
   const canvas = h('canvas', 'qs-canvas') as HTMLCanvasElement;
   canvas.id = 'visualizer';
@@ -76,6 +88,36 @@ document.addEventListener('DOMContentLoaded', () => {
   btnStop.onclick = () => { viz.stopScreenShare(); statusEl.textContent = 'Stopped'; };
   btnDemo.onclick = () => { viz.setDemoMode(true); statusEl.textContent = 'Demo mode active'; };
   btnPause.onclick = () => { viz.togglePause(); setPauseLabel(); };
+  // injected handlers
+  const shellEl = shell;
+  btnToggleSide.onclick = () => {
+    shellEl.classList.toggle('side-collapsed');
+    btnToggleSide.textContent = shellEl.classList.contains('side-collapsed') ? '►' : '◄';
+    window.dispatchEvent(new Event('resize'));
+  };
+
+  const requestFs = async (el) => {
+    if (el.requestFullscreen) return el.requestFullscreen();
+    if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
+    if (el.msRequestFullscreen) return el.msRequestFullscreen();
+  };
+  const exitFs = async () => {
+    if (document.exitFullscreen) return document.exitFullscreen();
+    if (document.webkitExitFullscreen) return document.webkitExitFullscreen();
+    if (document.msExitFullscreen) return document.msExitFullscreen();
+  };
+
+  btnFullscreen.onclick = async () => {
+    const target = document.querySelector('.qs-main') || document.documentElement;
+    if (!document.fullscreenElement &&
+        !document.webkitFullscreenElement &&
+        !document.msFullscreenElement) {
+      await requestFs(target);
+    } else {
+      await exitFs();
+    }
+  };
+
 
   window.addEventListener('keydown', (e) => {
     if (e.key.toLowerCase() === 'p') { viz.togglePause(); setPauseLabel(); }

@@ -19,3 +19,4 @@ Thumbs.db
 .purge_and_lock.js
 .inline_now.js
 .DS_Store
+a.sh
