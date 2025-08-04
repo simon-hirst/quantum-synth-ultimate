@@ -89,36 +89,24 @@ float sat01(float x){ return clamp(x,0.0,1.0); }
 void main(){
   vec2 uv=vUV; vec2 p=toAspect(uv);
   float t=uTime;
-
-  // Polar & audio probes
   float r=length(p)+1e-5;
   float ang=atan(p.y,p.x);
   float specA = specAt(fract((ang+3.14159)/6.28318));
   float specR = specAt(sat(r));
   float wavX  = waveAt(fract(0.5*(p.x+1.0)));
   float wavY  = waveAt(fract(0.5*(p.y+1.0)));
-
-  // Orb radius: breathe harder with bass/impact
   float breathe = 0.36 + 0.75*uLow + 0.35*uImpact;
   float baseR = 0.43 + 0.08*sin(t*2.0 + uLow*4.0) - 0.07*breathe;
-
-  // Domain warp driven by mids/highs + a bit of beat
   vec2 w = p;
   float warp = 0.22 + 0.35*uMid + 0.25*uAir + 0.20*uBeat;
   w += warp * vec2(fbm(p*3.8 + vec2(0.0,t*0.9)), fbm(p*3.5 + vec2(t*1.1,0.0)));
   w += 0.05*vec2(sin(ang*12.0 + t*5.0)*specA, cos(ang*10.0 - t*4.0)*specR);
-
-  // Edge vibration (spectrum+waveform) and width scales
   float edgeNoise = 0.08*fbm(w*4.0 + vec2(t*0.8,-t*0.7)) + 0.05*(wavX+wavY);
   float edgeWidth = 0.05 + 0.04*uImpact + 0.02*uBeat;
   float edge = ring(r - (baseR + edgeNoise), edgeWidth) * (0.8 + 2.2*uLevel + 1.2*uImpact);
-
-  // Inner core with swirl
   float layer = pow(sat01(baseR - r + 0.12), 2.0);
   float swirl = fbm(rot(w, t*0.35 + uLow*1.2)*2.6);
   float core = layer * (0.35 + 2.4*uLevel + 1.2*uLow) * (0.6 + 0.8*swirl);
-
-  // Beat ripples (travel outward faster on strong bass)
   float speed = 3.4 + 8.0*uLow + 3.0*uAir;
   float ripple = 0.0;
   for(int i=0;i<4;i++){
@@ -126,16 +114,12 @@ void main(){
     ripple += ring( sin(13.0*r - ph*8.0), 0.11 - 0.03*uImpact );
   }
   ripple *= (0.18 + 2.2*uBeat + 1.1*uImpact);
-
-  // Color & glow
   vec3 ink = mix(vec3(0.12,1.0,1.1), vec3(1.0,0.55,1.05), sat(0.55 + 0.45*swirl + 0.35*specA));
   vec3 col = vec3(0.02);
   col += ink * (edge*1.15 + ripple*0.85);
   col += vec3(0.2,0.4,0.7) * core;
-
   float halo = exp(-pow(r*2.1, 2.0)) * (0.35 + 2.0*uLow + 0.9*uImpact + 0.5*uBeat);
   col += vec3(0.2,0.95,1.1) * halo;
-
   col *= vignette(uv);
   gl_FragColor = vec4(col,1.0);
 }

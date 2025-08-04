@@ -135,4 +135,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Start the render loop (and fetch server shader)
   viz.start().catch(err => console.error(err));
+
+  // QS008 handlers start
+  const shellEl = shell;
+  const btnToggleSide = document.getElementById('btnToggleSide') as HTMLButtonElement;
+  const btnFullscreen = document.getElementById('btnFullscreen') as HTMLButtonElement;
+
+  if (btnToggleSide) {
+    btnToggleSide.onclick = () => {
+      shellEl.classList.toggle('side-collapsed');
+      btnToggleSide.textContent = shellEl.classList.contains('side-collapsed') ? '►' : '◄';
+      // force a resize so the canvas fits new layout
+      window.dispatchEvent(new Event('resize'));
+    };
+  }
+
+  const requestFs = async (el: any) => {
+    if (el.requestFullscreen) return el.requestFullscreen();
+    if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
+    if (el.msRequestFullscreen) return el.msRequestFullscreen();
+  };
+  const exitFs = async () => {
+    if (document.exitFullscreen) return document.exitFullscreen();
+    if ((document as any).webkitExitFullscreen) return (document as any).webkitExitFullscreen();
+    if ((document as any).msExitFullscreen) return (document as any).msExitFullscreen();
+  };
+
+  if (btnFullscreen) {
+    btnFullscreen.onclick = async () => {
+      const target: any = document.querySelector('.qs-main') || document.documentElement;
+      if (!document.fullscreenElement &&
+          !(document as any).webkitFullscreenElement &&
+          !(document as any).msFullscreenElement) {
+        await requestFs(target);
+      } else {
+        await exitFs();
+      }
+    };
+  }
+  // QS008 handlers end
+
 });
