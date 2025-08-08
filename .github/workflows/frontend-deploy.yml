@@ -34,7 +34,9 @@ jobs:
 
     - name: Deploy to Azure Storage
       uses: azure/CLI@v1
+        with:
+          azcliversion: 2.62.0
       with:
         azcliversion: 2.0.72
         inlineScript: |
-          az storage blob upload-batch -s frontend/dist -d \$web --account-name quantumsynthstorage --overwrite
+          az storage blob upload-batch -s frontend/dist -d \$web --account-name quantumsynthstorage --overwrite true

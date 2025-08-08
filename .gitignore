@@ -1,7 +1,7 @@
 # QuantumSynth — canonical .gitignore
 
-# Local helpers
-a.sh
+# Hide all local helper scripts (kept locally; not in repo)
+scripts/
 
 # Node / frontend
 node_modules/

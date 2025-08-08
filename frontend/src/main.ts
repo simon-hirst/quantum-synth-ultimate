@@ -106,18 +106,22 @@ document.addEventListener('DOMContentLoaded', () => {
   
 
 
-// QS010 handlers start
+
+
+
+// QS011 handlers start
 {
   const shellEl = shell;
   const btnToggleSide = document.getElementById('btnToggleSide') as HTMLButtonElement | null;
   const btnFullscreen = document.getElementById('btnFullscreen') as HTMLButtonElement | null;
 
   if (btnToggleSide) {
-    btnToggleSide.onclick = () => {
+    btnToggleSide.addEventListener('click', () => {
       shellEl.classList.toggle('side-collapsed');
       btnToggleSide.textContent = shellEl.classList.contains('side-collapsed') ? '►' : '◄';
+      // Reflow canvas
       window.dispatchEvent(new Event('resize'));
-    };
+    });
   }
 
   const requestFs = async (el: any) => {
@@ -132,18 +136,15 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   if (btnFullscreen) {
-    btnFullscreen.onclick = async () => {
+    btnFullscreen.addEventListener('click', async () => {
       const target: any = document.querySelector('.qs-main') || document.documentElement;
-      if (!document.fullscreenElement &&
-          !(document as any).webkitFullscreenElement &&
-          !(document as any).msFullscreenElement) {
-        await requestFs(target);
-      } else {
-        await exitFs();
-      }
-    };
+      const fsOn = !!(document.fullscreenElement ||
+                      (document as any).webkitFullscreenElement ||
+                      (document as any).msFullscreenElement);
+      if (!fsOn) await requestFs(target); else await exitFs();
+    });
   }
 }
-// QS010 handlers end
+// QS011 handlers end
 
 });
