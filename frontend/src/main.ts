@@ -148,3 +148,51 @@ document.addEventListener('DOMContentLoaded', () => {
 // QS011 handlers end
 
 });
+
+// QS009 sidebar + fullscreen (idempotent) START
+(()=>{
+  try{
+    const shellEl = document.querySelector('.qs-shell') as HTMLElement | null;
+    const sideEl  = document.querySelector('.qs-side')  as HTMLElement | null;
+    const mainEl  = document.querySelector('.qs-main')  as HTMLElement | null;
+    if(!shellEl || !sideEl || !mainEl) return;
+
+    // Sidebar toggle button
+    let btn = document.getElementById('btnToggleSide') as HTMLButtonElement | null;
+    if(!btn){
+      btn = document.createElement('button');
+      btn.id = 'btnToggleSide';
+      btn.className = 'qs-side-toggle';
+      btn.textContent = '◄';
+      btn.title = 'Toggle sidebar';
+      sideEl.prepend(btn);
+    }
+    btn.onclick = () => {
+      shellEl.classList.toggle('side-collapsed');
+      btn!.textContent = shellEl.classList.contains('side-collapsed') ? '►' : '◄';
+      // let the canvas resize handlers kick in
+      window.dispatchEvent(new Event('resize'));
+    };
+
+    // Fullscreen button
+    let fsb = document.getElementById('btnFullscreen') as HTMLButtonElement | null;
+    if(!fsb){
+      fsb = document.createElement('button');
+      fsb.id = 'btnFullscreen';
+      fsb.className = 'qs-fullscreen';
+      fsb.textContent = '⛶';
+      fsb.title = 'Fullscreen';
+      mainEl.appendChild(fsb);
+    }
+    fsb.onclick = async () => {
+      const target:any = mainEl;
+      const doc:any = document;
+      if (!doc.fullscreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
+        (target.requestFullscreen || target.webkitRequestFullscreen || target.msRequestFullscreen).call(target);
+      } else {
+        (doc.exitFullscreen || doc.webkitExitFullscreen || doc.msExitFullscreen).call(doc);
+      }
+    };
+  }catch(e){ console.warn('QS009 injection failed', e); }
+})();
+// QS009 sidebar + fullscreen END

@@ -169,3 +169,27 @@ a:hover{ text-decoration:underline; }
   box-shadow:0 6px 18px rgba(0,0,0,0.35);
 }
 .qs-fullscreen:hover{ background:rgba(255,255,255,0.18); }
+/* QS009 */
+.qs-shell{ position:relative; display:flex; gap:0; }
+.qs-side{ width:260px; transition: width .25s ease, padding .25s ease, transform .25s ease; will-change: transform,width; }
+.qs-main{ position:relative; flex:1 1 auto; }
+
+.qs-shell.side-collapsed .qs-side{ width:0!important; padding-left:0!important; padding-right:0!important; overflow:hidden; transform:translateX(-100%); }
+.qs-shell.side-collapsed .qs-main{ margin-left:0!important; }
+
+.qs-side-toggle{
+  position:absolute; top:10px; right:-12px; z-index:20;
+  width:24px; height:24px; line-height:24px;
+  border-radius:999px; border:0; cursor:pointer; font-weight:700;
+  background:rgba(255,255,255,.12); color:#dff3ff; backdrop-filter:blur(6px);
+  box-shadow:0 4px 12px rgba(0,0,0,.25);
+}
+
+.qs-fullscreen{
+  position:absolute; right:16px; bottom:16px; z-index:30;
+  width:40px; height:40px; border-radius:10px; border:none; cursor:pointer; font-size:18px;
+  background:rgba(255,255,255,.12); color:#dff3ff; backdrop-filter:blur(6px);
+  box-shadow:0 6px 18px rgba(0,0,0,.35);
+}
+.qs-fullscreen:hover{ background:rgba(255,255,255,.18); }
+/* /QS009 */

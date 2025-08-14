@@ -1,42 +1,51 @@
-name: Deploy Frontend to Azure Storage
+name: Frontend Deploy
 
 on:
   push:
-    branches: [ master ]
+    branches: [ "master", "main" ]
     paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend-deploy.yml'
+      - "frontend/**"
+      - ".github/workflows/frontend-deploy.yml"
+      - "README.md"
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     environment: production
-
+    permissions:
+      contents: read
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
 
-    - name: Install dependencies
-      run: |
-        cd frontend
-        npm ci
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
 
-    - name: Build frontend
-      run: |
-        cd frontend
-        npm run build
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
 
-    - name: Deploy to Azure Storage
-      uses: azure/CLI@v1
+      # Upload the built assets to Azure Storage static website ($web)
+      # Requires repository secret: AZURE_STORAGE_KEY
+      - name: Deploy to Azure Storage
+        uses: azure/CLI@v1
         with:
           azcliversion: 2.62.0
-      with:
-        azcliversion: 2.0.72
-        inlineScript: |
-          az storage blob upload-batch -s frontend/dist -d \$web --account-name quantumsynthstorage --overwrite true
+          inlineScript: |
+            set -euo pipefail
+            az storage blob upload-batch \
+              --source frontend/dist \
+              --destination '$web' \
+              --account-name quantumsynthstorage \
+              --auth-mode key \
+              --account-key "${AZURE_STORAGE_KEY}" \
+              --overwrite true
+        env:
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}

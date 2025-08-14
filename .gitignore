@@ -69,3 +69,29 @@ bin/
 # Coverage
 coverage/
 .nyc_output/
+# QS ignore block
+scripts/
+# build artifacts
+dist/
+frontend/dist/
+.vite/
+frontend/.vite/
+node_modules/
+frontend/node_modules/
+# env/secrets (repo should use GitHub Secrets)
+.env
+.env.*
+frontend/.env
+frontend/.env.*
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+# misc
+*.tmp
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*

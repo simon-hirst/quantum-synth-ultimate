@@ -39,7 +39,7 @@ precision highp float;
 varying vec2 vUV; uniform vec2 uRes;
 float sat(float x){ return clamp(x,0.0,1.0); }
 vec2  toAspect(vec2 uv){ vec2 p=uv*2.0-1.0; p.x *= uRes.x/max(1.0,uRes.y); return p; }
-float vignette(vec2 uv){ vec2 p=toAspect(uv); float d=dot(p,p); return smoothstep(1.15,0.25, d); }
+float vignette(vec2 uv){ return 1.0; }
 vec3  pal(float t, vec3 a, vec3 b, vec3 c, vec3 d){ return a + b*cos(6.28318*(c*t+d)); }
 vec3  nicePal(float t){ return pal(t, vec3(0.5,0.53,0.56), vec3(0.45,0.43,0.48), vec3(1.0,1.0,1.0), vec3(0.0,0.33,0.67)); }
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }
