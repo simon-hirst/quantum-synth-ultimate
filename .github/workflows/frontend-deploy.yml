@@ -39,6 +39,11 @@ jobs:
         with:
           azcliversion: 2.62.0
           inlineScript: |
+            if [ -z "${AZURE_STORAGE_KEY:-}" ]; then
+              echo "::warning::AZURE_STORAGE_KEY secret not provided. Skipping static site deployment."
+              exit 0
+            fi
+
             set -euo pipefail
             az storage blob upload-batch \
               --source frontend/dist \
