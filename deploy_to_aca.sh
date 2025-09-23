@@ -1,24 +1,20 @@
 #!/usr/bin/env bash
-# deploy_to_aca.sh — full-stack deploy to Azure Container Apps
 set -euo pipefail
 
-# ----- Config (override via env) -----
 : "${RG:=quantum-synth-rg}"
 : "${APP:=quantum-ai-backend}"
 : "${ACR_NAME:=quantumsynthacr1757219498}"
 : "${IMAGE_NAME:=quantum-ai-backend}"
 : "${DOCKERFILE:=Dockerfile}"
 : "${FRONTEND_DIR:=frontend}"
-: "${KEEP_HTTP2:=false}"        # set true to keep HTTP/2
-: "${WAIT_READY:=true}"         # set false to skip wait/smokes
-: "${DO_FRONTEND:=true}"        # set false to skip vite build
-# -------------------------------------
+: "${KEEP_HTTP2:=false}"
+: "${WAIT_READY:=true}"
+: "${DO_FRONTEND:=true}"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "❌ Missing dependency: $1"; exit 1; }; }
 
 write_perf_wrap() {
   cat > perf_wrap.go <<'EOF'
-// Codegen: deploy_to_aca.sh
 package main
 
 import (
@@ -79,7 +75,6 @@ func NewTimeoutServer(addr string, h http.Handler) *http.Server {
 EOF
 }
 
-# ----- deps -----
 need az; need docker; need git
 if [[ "${DO_FRONTEND}" == "true" ]]; then need node; need npm; fi
 
@@ -94,13 +89,11 @@ echo "⚙️  ACR:              ${ACR_FQDN}"
 echo "⚙️  Image tag:        ${IMAGE}"
 echo
 
-# Ensure perf_wrap.go exists
 if ! grep -q 'func[[:space:]]\+WrapPerf' perf_wrap.go 2>/dev/null; then
   echo "🧩 Adding perf_wrap.go (gzip + caching + timeouts)…"
   write_perf_wrap
 fi
 
-# Frontend build
 if [[ "${DO_FRONTEND}" == "true" ]]; then
   echo "🧱 Building frontend (vite)…"
   pushd "${FRONTEND_DIR}" >/dev/null
@@ -112,11 +105,9 @@ else
   echo "⏭️  Skipping frontend build."
 fi
 
-# Quick backend compile (BUILD WHOLE PACKAGE!)
 echo "🧪 Backend quick compile…"
 if command -v go >/dev/null 2>&1; then
   go mod tidy
-  # ✅ FIX: compile the package, not just main.go
   go build -o /tmp/ai-processor-sanity .
   rm -f /tmp/ai-processor-sanity
   echo "✅ Go compiles."
@@ -124,7 +115,6 @@ else
   echo "ℹ️  go not found; skipping local compile."
 fi
 
-# Docker build/push
 echo "🔐 Logging in to ACR: ${ACR_NAME}"
 az acr login -n "${ACR_NAME}" >/dev/null
 
@@ -139,7 +129,6 @@ docker build \
 echo "📤 Pushing image…"
 docker push "${IMAGE}"
 
-# Update ACA
 echo "🚀 Updating Container App ${APP} → ${IMAGE}"
 PREV_REV="$(az containerapp show -n "${APP}" -g "${RG}" --query "properties.latestReadyRevisionName" -o tsv 2>/dev/null || true)"
 az containerapp update -n "${APP}" -g "${RG}" --image "${IMAGE}" --revision-suffix "${TAG}" >/dev/null
@@ -152,7 +141,6 @@ fi
 FQDN="$(az containerapp show -n "${APP}" -g "${RG}" --query "properties.configuration.ingress.fqdn" -o tsv)"
 echo "🌎 FQDN: https://${FQDN}"
 
-# Wait + smokes
 if [[ "${WAIT_READY}" == "true" ]]; then
   echo "⏳ Waiting for Running…"
   deadline=$(( $(date +%s) + 300 ))

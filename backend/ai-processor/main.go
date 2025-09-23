@@ -63,7 +63,6 @@ func handleProcess(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Process audio data and generate visual response
 		response := ProcessResponse{
 			Particles: generateParticles(audioData),
 			Colors:    []string{"#ff6b6b", "#4ecdc4", "#45b7d1", "#f9c74f", "#ffafcc"},
@@ -116,7 +115,6 @@ func main() {
 	router.HandleFunc("/ws", handleProcess).Methods("GET")
 	router.HandleFunc("/health", handleHealth).Methods("GET")
 
-	// CORS middleware
 	headers := handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
 	methods := handlers.AllowedMethods([]string{"GET", "POST", "PUT", "HEAD", "OPTIONS"})
 	origins := handlers.AllowedOrigins([]string{"*"})

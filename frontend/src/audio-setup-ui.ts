@@ -18,7 +18,7 @@ export class AudioSetupUI {
   }
 
   private createOverlay(): HTMLDivElement {
-    const overlay = document.createElement('div');
+    const overlay = document.createElement("div");
     overlay.innerHTML = `
       <div style="
         position: fixed;
@@ -110,12 +110,11 @@ export class AudioSetupUI {
       </div>
     `;
 
-    // Add event listeners
-    overlay.querySelector('#startBtn')!.addEventListener('click', () => {
+    overlay.querySelector("#startBtn")!.addEventListener("click", () => {
       this.startAudioCapture();
     });
 
-    overlay.querySelector('#cancelBtn')!.addEventListener('click', () => {
+    overlay.querySelector("#cancelBtn")!.addEventListener("click", () => {
       this.hide();
     });
 
@@ -124,46 +123,46 @@ export class AudioSetupUI {
 
   private async startAudioCapture() {
     try {
-      this.updateButtonState('Connecting...');
-      
+      this.updateButtonState("Connecting...");
+
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
-          cursor: 'never',
-          displaySurface: 'monitor'
+          cursor: "never",
+          displaySurface: "monitor",
         },
         audio: {
           echoCancellation: false,
           noiseSuppression: false,
           sampleRate: 44100,
-          channelCount: 2
-        } as any
+          channelCount: 2,
+        } as any,
       });
 
       this.hide();
       this.onSetupComplete(stream);
-
     } catch (error) {
-      console.error('Audio capture failed:', error);
-      this.showError('Please allow screen sharing to continue. Remember to check "Share audio"!');
-      this.updateButtonState('Try Again');
+      console.error("Audio capture failed:", error);
+      this.showError(
+        'Please allow screen sharing to continue. Remember to check "Share audio"!',
+      );
+      this.updateButtonState("Try Again");
     }
   }
 
   private updateButtonState(text: string) {
-    const button = this.overlay.querySelector('#startBtn') as HTMLButtonElement;
+    const button = this.overlay.querySelector("#startBtn") as HTMLButtonElement;
     button.textContent = text;
-    button.disabled = text === 'Connecting...';
+    button.disabled = text === "Connecting...";
   }
 
   private showError(message: string) {
-    // Remove any existing error message
-    const existingError = this.overlay.querySelector('.error-message');
+    const existingError = this.overlay.querySelector(".error-message");
     if (existingError) {
       existingError.remove();
     }
 
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error-message';
+    const errorDiv = document.createElement("div");
+    errorDiv.className = "error-message";
     errorDiv.style.cssText = `
       color: #ff6b6b;
       margin: 16px 0;
@@ -173,8 +172,10 @@ export class AudioSetupUI {
       border: 1px solid rgba(255, 107, 107, 0.3);
     `;
     errorDiv.textContent = message;
-    
-    const buttonContainer = this.overlay.querySelector('div > div > div:last-child');
+
+    const buttonContainer = this.overlay.querySelector(
+      "div > div > div:last-child",
+    );
     buttonContainer?.parentNode?.insertBefore(errorDiv, buttonContainer);
   }
 }
