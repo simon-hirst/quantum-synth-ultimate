@@ -92,246 +92,172 @@ float waveAt(float x){
 }
 `;
 
-const FS_PLASMA_ORB = `
+const FS_BASS_BLOOM = `
 ${PRELUDE}${NOISE}${AUDIO_UNI}
-float ring(float d, float w){ return smoothstep(w, 0.0, abs(d)); }
-float sat01(float x){ return clamp(x,0.0,1.0); }
-void main(){
-  vec2 uv=vUV; vec2 p=toAspect(uv);
-  float t=uTime;
-  float r=length(p)+1e-5;
-  float ang=atan(p.y,p.x);
-  float specA = specAt(fract((ang+3.14159)/6.28318));
-  float specR = specAt(sat(r));
-  float wavX  = waveAt(fract(0.5*(p.x+1.0)));
-  float wavY  = waveAt(fract(0.5*(p.y+1.0)));
-  float breathe = 0.36 + 0.75*uLow + 0.35*uImpact;
-  float baseR = 0.43 + 0.08*sin(t*2.0 + uLow*4.0) - 0.07*breathe;
-  vec2 w = p;
-  float warp = 0.22 + 0.35*uMid + 0.25*uAir + 0.20*uBeat;
-  w += warp * vec2(fbm(p*3.8 + vec2(0.0,t*0.9)), fbm(p*3.5 + vec2(t*1.1,0.0)));
-  w += 0.05*vec2(sin(ang*12.0 + t*5.0)*specA, cos(ang*10.0 - t*4.0)*specR);
-  float edgeNoise = 0.08*fbm(w*4.0 + vec2(t*0.8,-t*0.7)) + 0.05*(wavX+wavY);
-  float edgeWidth = 0.05 + 0.04*uImpact + 0.02*uBeat;
-  float edge = ring(r - (baseR + edgeNoise), edgeWidth) * (0.8 + 2.2*uLevel + 1.2*uImpact);
-  float layer = pow(sat01(baseR - r + 0.12), 2.0);
-  float swirl = fbm(rot(w, t*0.35 + uLow*1.2)*2.6);
-  float core = layer * (0.35 + 2.4*uLevel + 1.2*uLow) * (0.6 + 0.8*swirl);
-  float speed = 3.4 + 8.0*uLow + 3.0*uAir;
-  float ripple = 0.0;
-  for(int i=0;i<4;i++){
-    float ph = t*speed - float(i)*0.65;
-    ripple += ring( sin(13.0*r - ph*8.0), 0.11 - 0.03*uImpact );
-  }
-  ripple *= (0.18 + 2.2*uBeat + 1.1*uImpact);
-  vec3 ink = mix(vec3(0.12,1.0,1.1), vec3(1.0,0.55,1.05), sat(0.55 + 0.45*swirl + 0.35*specA));
-  vec3 col = vec3(0.02);
-  col += ink * (edge*1.15 + ripple*0.85);
-  col += vec3(0.2,0.4,0.7) * core;
-  float halo = exp(-pow(r*2.1, 2.0)) * (0.35 + 2.0*uLow + 0.9*uImpact + 0.5*uBeat);
-  col += vec3(0.2,0.95,1.1) * halo;
-  col *= vignette(uv);
-  gl_FragColor = vec4(col,1.0);
+float softRing(float r, float radius, float width){
+  return smoothstep(width, 0.0, abs(r - radius));
 }
-`;
-
-const FS_AURORA = `
-${PRELUDE}${NOISE}${AUDIO_UNI}
 void main(){
-  vec2 p = toAspect(vUV);
-  float t = uTime*0.35 + uLow*1.3;
-  vec2 q = p;
-  q.x += 0.45*fbm(p*1.6 + vec2(0.0,t*1.7));
-  q.y += 0.28*fbm(p*2.0 + vec2(t*0.8,0.0));
-  float bands = 0.55 + 0.45*sin(5.2*q.y + 3.9*q.x + t*3.7 + uAir*7.0 + uBeat*3.0);
-  float drift  = fbm(q*2.2 + vec2(t*0.7,-t*0.55));
-  float glow = pow(sat(bands*0.55 + drift*0.7), 3.0);
-  float tone = 0.2 + 0.6*glow + 0.35*uAir + 0.25*uLow;
-  vec3 tint = mix(vec3(0.15,0.9,1.0), vec3(1.0,0.5,1.0), sat(uAir*1.4));
-  vec3 col = nicePal(tone)*0.22 + tint*glow*(0.9+1.8*uLevel+0.5*uImpact);
-  col *= vignette(vUV);
-  gl_FragColor = vec4(col,1.0);
-}
-`;
-
-const FS_LIQUID = `
-${PRELUDE}${NOISE}${AUDIO_UNI}
-float ridge(float x, float w){ return smoothstep(w, 0.0, abs(x)); }
-void main(){
-  vec2 p = toAspect(vUV);
+  vec2 uv = vUV;
+  vec2 p = toAspect(uv);
   float t = uTime;
-  vec2 w = p*1.4;
-  w += 0.42*vec2(fbm(p*1.8 + vec2(0.0,t*0.9)), fbm(p*1.9 + vec2(t*0.8,0.0)));
-  float f = fbm(w*2.3 + rot(p, 0.35*t + uLow*1.0));
-  float lines = 0.0;
-  float scale = 7.0 + 12.0*uMid + 5.0*uLow + 4.0*uBeat;
-  for(int i=0;i<5;i++){
-    float s = 0.9 + float(i)*0.55;
-    float r = ridge(fract(f*scale*s) - 0.5, 0.16 - 0.06*uImpact);
-    lines += r;
+  float r = length(p) + 1e-4;
+  float ang = atan(p.y, p.x);
+  float bass = uLow;
+  float treble = uAir;
+  float specRad = specAt(sat(r));
+  float specAng = specAt(fract((ang + 3.14159) / 6.28318));
+  float waveLine = waveAt(fract(0.5 * (ang / 3.14159 + 1.0) + t * 0.05));
+  vec2 warp = p;
+  warp += 0.25 * vec2(
+    fbm(p * 2.5 + vec2(0.0, t * 0.7)),
+    fbm(p * 2.3 + vec2(t * 0.6, 0.0))
+  ) * (0.6 + 1.3 * bass);
+  float bloomRadius = 0.25 + 0.35 * bass + 0.12 * uImpact + 0.08 * waveLine;
+  float bloom = softRing(r, bloomRadius, 0.12 - 0.04 * uImpact);
+  float inner = exp(-pow(r / (0.32 + 0.18 * bass), 2.2));
+  float ripples = 0.0;
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i);
+    ripples += softRing(
+      r,
+      bloomRadius + fi * 0.07 + 0.02 * waveLine,
+      0.05 + 0.015 * uMid
+    );
   }
-  lines /= 5.0;
-  vec3 base = nicePal(f*0.75 + 0.2*uAir);
-  vec3 col  = base*0.25 + mix(vec3(0.1,1.0,1.0), vec3(1.0,0.55,1.1), uAir)*lines*(0.9+1.7*uLevel+0.6*uImpact);
-  col = mix(col, vec3(0.02), 0.12);
-  col *= vignette(vUV);
+  ripples *= 0.18 + 1.6 * uBeat + 0.9 * uImpact;
+  float streaks = sin(ang * 10.0 + t * 4.0 + bass * 6.0) * (0.5 + 1.0 * treble);
+  vec3 base = nicePal(0.32 + 0.25 * specAng + 0.2 * treble);
+  vec3 glow = vec3(0.18, 0.9, 1.1) * (0.4 + 2.1 * bass + 1.1 * uImpact);
+  vec3 ink = mix(vec3(0.05, 0.1, 0.2), vec3(0.08, 0.12, 0.25), r);
+  vec3 col = ink;
+  col += base * (inner * (0.6 + 2.3 * uLevel) + streaks * 0.12);
+  col += glow * (bloom * (0.8 + 1.7 * specRad) + ripples);
+  col *= vignette(uv);
   gl_FragColor = vec4(col, 1.0);
 }
 `;
 
-const FS_NEON_PARTICLES = `
+const FS_SPECTRUM_CASCADE = `
 ${PRELUDE}${AUDIO_UNI}
-float softDisc(vec2 p, float r, float blur){ return smoothstep(blur, 0.0, length(p)-r); }
 void main(){
-  vec2 uv=vUV; vec2 p=toAspect(uv); float t=uTime;
-  vec3 col=vec3(0.0);
-  for(int i=0;i<90;i++){
-    float fi=float(i);
-    float a=fract(sin(fi*12.345)*43758.5453);
-    float b=fract(sin((fi+3.14)*54.321)*12345.6789);
-    vec2 center=vec2(a*2.0-1.0, b*2.0-1.0);
-    float spin=0.12 + 0.6*b + 0.4*uAir;
-    center=rot(center, t*spin);
-    center+=0.32*vec2(sin(t*(0.7+a*1.4)), cos(t*(0.8+b*1.2)));
-    float bass=0.7 + 1.2*uLow + 0.6*uImpact;
-    float size=mix(0.018, 0.12 + 0.1*uBeat, a)*bass;
-    float d=softDisc(p-center, size, 0.05 + 0.05*uImpact);
-    vec3  tint=mix(vec3(0.1,0.9,1.0), vec3(1.0,0.55,1.0), b);
-    col += (d*d)*tint*(0.55+2.0*uLevel+0.6*uImpact);
-  }
+  vec2 uv = vUV;
+  float t = uTime;
+  float x = uv.x;
+  float spec = specAt(pow(x, 0.55));
+  float specMirror = specAt(pow(1.0 - x, 0.7));
+  float energy = 0.35 + 2.0 * uLevel + 0.8 * uImpact;
+  float barHeight = 0.08 + 2.4 * spec + 1.0 * uLow + 0.6 * uMid;
+  float thickness = 0.025 + 0.04 * uImpact;
+  float body = step(uv.y, barHeight);
+  float topFade = 1.0 - smoothstep(max(0.0, barHeight - thickness), barHeight, uv.y);
+  float glow = smoothstep(
+    max(0.0, barHeight - 0.02 - 0.04 * uAir),
+    barHeight,
+    uv.y
+  ) * body;
+  float scan = sin((x * 70.0 - t * 9.0) * (1.0 + uAir * 0.6));
+  vec3 backdrop = mix(vec3(0.03, 0.04, 0.07), vec3(0.08, 0.09, 0.13), uv.y);
+  vec3 core = mix(vec3(0.18, 0.8, 1.1), vec3(1.0, 0.55, 0.9), x);
+  vec3 tip = mix(vec3(0.2, 0.9, 1.2), vec3(1.0, 0.8, 0.6), specMirror);
+  vec3 col = backdrop;
+  col += core * body * topFade * energy;
+  col += tip * glow * (0.4 + 2.2 * uAir + 1.0 * uBeat);
+  col += vec3(0.05, 0.08, 0.12) * max(0.0, scan) * body * 0.35;
+  float floorGlow = smoothstep(0.0, 0.06 + 0.1 * uImpact, barHeight - uv.y);
+  col += vec3(0.1, 0.2, 0.3) * floorGlow * (0.15 + 1.1 * uLow);
   col *= vignette(uv);
-  gl_FragColor=vec4(col,1.0);
+  gl_FragColor = vec4(col, 1.0);
 }
 `;
 
-const FS_RIBBONS = `
-${PRELUDE}${AUDIO_UNI}
-float linstep(float a,float b,float x){ return clamp((x-a)/(b-a), 0.0, 1.0); }
-void main(){
-  vec2 uv=vUV; vec2 p=toAspect(uv); float t=uTime*0.9;
-  float stripes=0.0; float N=10.0;
-  for(int i=0;i<10;i++){
-    float fi=float(i);
-    float wv = waveAt(fract(uv.x*0.8 + fi*0.08 + t*0.07));
-    float y  = (wv*2.0-1.0)*0.52 + 0.38*sin(t*0.7 + fi*0.72 + uLow*0.9);
-    float d  = abs(p.y - y);
-    float thick = 0.03 + 0.08*linstep(0.35,1.0,uImpact) + 0.03*uBeat;
-    float line = smoothstep(thick, 0.0, d);
-    stripes += line * (1.0 - fi/N);
-  }
-  stripes /= N;
-  vec3 col = mix(vec3(0.05,0.07,0.1), vec3(0.02,0.03,0.05), 1.0);
-  vec3 ink = mix(vec3(0.15,1.0,1.1), vec3(1.0,0.55,1.0), sat(uAir*1.2));
-  col += ink * pow(stripes, 1.0) * (0.9+1.9*uLevel+0.6*uImpact);
-  col *= vignette(uv);
-  gl_FragColor = vec4(col,1.0);
-}
-`;
-
-const FS_GLASS_CELLS = `
+const FS_WAVE_TUNNEL = `
 ${PRELUDE}${NOISE}${AUDIO_UNI}
-vec2 voronoi(vec2 p){
-  vec2 n=floor(p), f=fract(p);
-  vec2 mg, mr; float md=8.0;
-  for(int j=-1;j<=1;j++){
-    for(int i=-1;i<=1;i++){
-      vec2 g=vec2(float(i),float(j));
-      vec2 o=vec2(hash(n+g), hash(n+g+1.7));
-      o = 0.5 + 0.5*sin(6.2831*o + uTime*vec2(0.28,0.23));
-      vec2 r=g+o-f; float d=dot(r,r);
-      if(d<md){ md=d; mr=r; mg=g; }
-    }
-  }
-  return vec2(sqrt(md), mr.x+mr.y);
-}
 void main(){
-  vec2 uv=vUV; vec2 p=toAspect(uv)*1.5;
-  p += 0.28*vec2(fbm(p*1.3 + uTime*0.25), fbm(p*1.5 - uTime*0.2));
-  vec2 v = voronoi(p + uLow*1.0);
-  float edge = smoothstep(0.08 - 0.04*uImpact, 0.0, v.x);
-  float glow = smoothstep(0.25, 0.0, v.x) * (0.4+1.9*uMid+0.6*uBeat);
-  vec3 base = nicePal(v.y*0.07 + 0.12*uAir);
-  vec3 col  = base*0.18 + vec3(edge)*0.9 + glow*vec3(0.2,1.0,1.1);
+  vec2 uv = vUV;
+  vec2 p = toAspect(uv);
+  float t = uTime * 0.6;
+  float radius = length(p) + 1e-4;
+  float angle = atan(p.y, p.x);
+  float travel = t + 0.2 * uLow;
+  float wave = waveAt(fract(0.5 * (angle / 3.14159 + 1.0) + travel * 0.1));
+  float spec = specAt(fract(radius));
+  vec2 swirl = vec2(
+    fbm(vec2(angle * 2.7, radius * 3.4) + vec2(0.0, travel * 1.3)),
+    fbm(vec2(angle * 2.2, radius * 3.1) + vec2(travel * 1.1, 0.0))
+  );
+  float depth = exp(-radius * (2.5 + 4.0 * uLevel));
+  float bands = sin((radius * 25.0 - travel * 10.0) + wave * 6.0);
+  float bandGlow = smoothstep(0.0, 1.0, 0.55 + 0.45 * bands);
+  vec3 tint = nicePal(0.35 + 0.25 * wave + 0.2 * uAir);
+  vec3 aura = mix(vec3(0.1, 0.4, 1.0), vec3(1.0, 0.6, 0.3), spec);
+  vec3 col = tint * (depth * (0.6 + 2.0 * uLow) + bandGlow * 0.2);
+  col += aura * (0.3 + 1.8 * uBeat + 0.8 * uImpact) * depth;
+  col += vec3(0.06, 0.12, 0.2) * fbm(p * 3.0 + swirl * 1.8) * (0.4 + 1.0 * uMid);
   col *= vignette(uv);
-  gl_FragColor = vec4(col,1.0);
-}
-`;
-
-const FS_CLASSIC_BARS = `
-${PRELUDE}${AUDIO_UNI}
-void main(){
-  vec2 uv=vUV;
-  float x = pow(uv.x, 0.82);
-  float a = specAt(x);
-  float H = 0.06 + 1.9*a + 0.9*uLevel + 0.35*uLow + 0.55*uImpact;
-  float body = step(uv.y, H);
-  float cap = smoothstep(H, H-0.04-0.05*uAir-0.035*uImpact, uv.y);
-  float shade = 0.35 + 0.65*pow(1.0-abs(uv.x*2.0-1.0), 0.5);
-  vec3 col = mix(vec3(0.1,1.0,1.1), vec3(1.0,0.5,1.0), x) * shade;
-  float g = smoothstep(H+0.02, H, uv.y) * (0.7+2.0*uLevel+0.9*uImpact);
-  col += g*vec3(0.7,1.0,1.1);
-  gl_FragColor = vec4(col*max(body, 1.2*cap),1.0);
-}
-`;
-
-const FS_CLASSIC_CENTERBARS = `
-${PRELUDE}${AUDIO_UNI}
-void main(){
-  vec2 uv=vUV;
-  float x = abs(uv.x-0.5)*2.0;
-  float a = specAt(pow(1.0-x,0.7));
-  float h = 0.05 + 1.8*a + 0.8*uLevel + 0.35*uLow + 0.5*uImpact;
-  float line = smoothstep(h, h-0.03-0.03*uAir, uv.y);
-  float glow = smoothstep(h+0.04+0.05*uImpact, h, uv.y);
-  vec3 col = mix(vec3(0.15,1.0,1.1), vec3(1.0,0.55,1.0), a);
-  col = col*line + vec3(glow)*(0.45+1.9*uLevel+0.9*uImpact);
   gl_FragColor = vec4(col, 1.0);
 }
 `;
 
-const FS_CLASSIC_WAVE = `
+const FS_PARTICLE_STORM = `
 ${PRELUDE}${AUDIO_UNI}
-void main(){
-  float y = 1.0 - waveAt(vUV.x);
-  float d = abs(vUV.y - y);
-  float thickness = 0.010 + 0.018*uImpact + 0.01*uBeat;
-  float line = smoothstep(thickness, 0.0, d);
-  float glow = smoothstep(0.08+0.05*uImpact, 0.0, d);
-  vec3 col = mix(vec3(0.15,1.0,1.1), vec3(1.0,0.55,1.0), vUV.x);
-  col = col * line + glow * 0.28*(0.7+1.6*uLevel);
-  gl_FragColor = vec4(col,1.0);
+float hash1(float n){ return fract(sin(n) * 43758.5453); }
+float softDisc(vec2 p, vec2 center, float radius, float blur){
+  return smoothstep(radius + blur, radius, length(p - center));
 }
-`;
-
-const FS_CLASSIC_LISSA = `
-${PRELUDE}${AUDIO_UNI}
 void main(){
-  vec2 uv=toAspect(vUV);
-  float a=waveAt(fract((vUV.x)));
-  float b=waveAt(fract((vUV.y)));
-  float d = length(uv - vec2(2.0*a-1.0, 2.0*b-1.0));
-  float line = smoothstep(0.02+0.012*uImpact, 0.0, d-0.002);
-  vec3 col = mix(vec3(0.12,1.0,1.1), vec3(1.0,0.55,1.0), a*b);
-  col *= (0.9+1.6*uLevel+0.5*uBeat);
-  gl_FragColor = vec4(col*line, 1.0);
-}
-`;
-
-const FS_CLASSIC_STARFIELD = `
-${PRELUDE}${AUDIO_UNI}
-float h2(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }
-void main(){
-  vec2 uv=vUV; vec2 p=toAspect(vUV); float d=length(p);
-  float speed = 1.0 + 4.5*uLow + 1.8*uImpact;
-  vec3 col=vec3(0.0);
-  for(int i=0;i<28;i++){
-    float f=float(i);
-    vec2 q = fract(uv*0.55 + vec2(h2(vec2(f,1.7)),h2(vec2(2.3,f))) + uTime*speed*0.025);
-    float star = pow(1.0 - length(q-0.5)*2.0, 7.0);
-    col += vec3(star)*(0.35+1.2*uAir);
+  vec2 uv = vUV;
+  vec2 p = toAspect(uv);
+  float t = uTime;
+  float bass = uLow;
+  float treble = uAir;
+  vec3 col = vec3(0.0);
+  float energy = 0.4 + 1.8 * uLevel + 1.0 * uImpact;
+  for (int i = 0; i < 60; i++) {
+    float fi = float(i);
+    float seed = fi * 17.13;
+    float orbit = mix(0.25, 1.2, hash1(seed));
+    float speed = mix(0.4, 1.6, hash1(seed + 2.3)) * (1.0 + treble * 0.7);
+    float offset = hash1(seed + 5.7) * 6.28318;
+    vec2 center = vec2(cos(offset + t * speed), sin(offset + t * speed));
+    center *= orbit;
+    center += 0.22 * vec2(sin(t * 0.8 + seed), cos(t * 0.6 + seed * 0.9)) * bass;
+    float size = mix(0.015, 0.08, hash1(seed + 11.1)) * (1.0 + bass * 1.4 + uImpact * 0.8);
+    float blur = size * (0.7 + 0.5 * treble);
+    float m = softDisc(p, center, size, blur);
+    float flicker = 0.4 + 0.6 * sin(t * 6.0 + seed + uBeat * 5.0);
+    vec3 tint = mix(vec3(0.15, 0.8, 1.1), vec3(1.0, 0.5, 0.9), hash1(seed + 7.4));
+    col += tint * m * energy * flicker;
   }
-  col *= 1.0 - d*0.25;
-  gl_FragColor=vec4(col,1.0);
+  float haze = exp(-dot(p, p) * (1.2 + 2.0 * bass));
+  col += vec3(0.05, 0.09, 0.16) * haze * (0.4 + 1.3 * treble);
+  col *= vignette(uv);
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+const FS_CHROMA_CURRENT = `
+${PRELUDE}${NOISE}${AUDIO_UNI}
+void main(){
+  vec2 uv = vUV;
+  vec2 p = toAspect(uv) * 1.2;
+  float t = uTime * 0.7;
+  vec2 flow = vec2(
+    fbm(p * 2.0 + vec2(0.0, t * 1.1)),
+    fbm(p * 2.2 + vec2(t * 0.9, 0.0))
+  );
+  float swirl = sin(p.x * 5.5 + p.y * 4.5 + t * 3.0 + uBeat * 5.0);
+  float spec = specAt(fract(uv.x + swirl * 0.05));
+  float band = waveAt(fract(uv.y + t * 0.12));
+  float weave = fbm(p * 3.3 + flow * 1.7);
+  float energy = 0.25 + 2.0 * uMid + 0.9 * uAir + 0.6 * uImpact;
+  vec3 base = nicePal(0.25 + 0.35 * weave + 0.2 * band + 0.1 * uLow);
+  vec3 highlight = mix(vec3(0.12, 0.5, 1.1), vec3(1.0, 0.45, 0.8), spec);
+  vec3 col = base * (0.4 + 1.6 * energy);
+  col += highlight * abs(swirl) * (0.25 + 1.4 * uAir + 0.9 * uBeat);
+  col += vec3(0.08, 0.12, 0.2) * weave * (0.3 + 1.1 * uLevel);
+  col *= vignette(uv);
+  gl_FragColor = vec4(col, 1.0);
 }
 `;
 
@@ -422,17 +348,11 @@ export class Visualizer {
   private fbTo: WebGLFramebuffer | null = null;
 
   private scenes = [
-    "plasmaOrb",
-    "auroraFlow",
-    "liquidSpectrum",
-    "neonParticles",
-    "ribbonWaves",
-    "glassCells",
-    "classicBars",
-    "classicCenterBars",
-    "classicWave",
-    "classicLissajous",
-    "classicStarfield",
+    "bassBloom",
+    "spectrumCascade",
+    "waveTunnel",
+    "particleStorm",
+    "chromaCurrent",
   ] as const;
   private sceneIdx = 0;
   private nextSwitchAt = 0;
@@ -538,17 +458,11 @@ export class Visualizer {
     );
 
     const sources: Record<string, string> = {
-      plasmaOrb: FS_PLASMA_ORB,
-      auroraFlow: FS_AURORA,
-      liquidSpectrum: FS_LIQUID,
-      neonParticles: FS_NEON_PARTICLES,
-      ribbonWaves: FS_RIBBONS,
-      glassCells: FS_GLASS_CELLS,
-      classicBars: FS_CLASSIC_BARS,
-      classicCenterBars: FS_CLASSIC_CENTERBARS,
-      classicWave: FS_CLASSIC_WAVE,
-      classicLissajous: FS_CLASSIC_LISSA,
-      classicStarfield: FS_CLASSIC_STARFIELD,
+      bassBloom: FS_BASS_BLOOM,
+      spectrumCascade: FS_SPECTRUM_CASCADE,
+      waveTunnel: FS_WAVE_TUNNEL,
+      particleStorm: FS_PARTICLE_STORM,
+      chromaCurrent: FS_CHROMA_CURRENT,
     };
     for (const [k, src] of Object.entries(sources)) {
       try {
@@ -962,7 +876,7 @@ export class Visualizer {
     const gl = this.gl!;
     const p = this.serverProg;
     if (!p) {
-      this.drawScene("plasmaOrb", t);
+      this.drawScene("bassBloom", t);
       return;
     }
     gl.useProgram(p);
