@@ -1,4 +1,4 @@
-import { wsUrl } from './backend-config';
+import { wsUrl } from "./backend-config";
 
 export class BackendConnection {
   private ws: WebSocket | null = null;
@@ -8,21 +8,24 @@ export class BackendConnection {
   constructor() {}
 
   connect() {
-    const url = wsUrl('/ws');
-    console.log('Connecting to:', url);
+    const url = wsUrl("/ws");
+    console.log("Connecting to:", url);
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
-      console.log('✅ Connected to AI backend via', url.startsWith('wss:') ? 'wss' : 'ws');
+      console.log(
+        "✅ Connected to AI backend via",
+        url.startsWith("wss:") ? "wss" : "ws",
+      );
       this.reconnectAttempts = 0;
     };
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error("WebSocket error:", error);
     };
 
     this.ws.onclose = () => {
-      console.log('WebSocket connection closed');
+      console.log("WebSocket connection closed");
       this.handleReconnect();
     };
 
@@ -32,7 +35,9 @@ export class BackendConnection {
   private handleReconnect() {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
-      console.log(`Reconnecting... Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+      console.log(
+        `Reconnecting... Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`,
+      );
       setTimeout(() => this.connect(), 2000 * this.reconnectAttempts);
     }
   }

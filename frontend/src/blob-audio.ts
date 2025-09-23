@@ -6,8 +6,9 @@ export class BlobAudioCapture {
 
   async captureAudio(): Promise<AnalyserNode> {
     try {
-      // Create a blob URL with audio MIME type
-      const blob = new Blob([`
+      const blob = new Blob(
+        [
+          `
         <!DOCTYPE html>
         <html>
         <body>
@@ -20,36 +21,38 @@ export class BlobAudioCapture {
           </script>
         </body>
         </html>
-      `], { type: 'text/html' });
+      `,
+        ],
+        { type: "text/html" },
+      );
 
       const blobUrl = URL.createObjectURL(blob);
 
-      // Create hidden iframe
-      this.iframe = document.createElement('iframe');
-      this.iframe.style.display = 'none';
+      this.iframe = document.createElement("iframe");
+      this.iframe.style.display = "none";
       this.iframe.src = blobUrl;
       document.body.appendChild(this.iframe);
 
-      // Wait for iframe to load
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      // Capture stream from iframe
       this.mediaStream = (this.iframe.contentWindow as any).captureStream();
-      
-      // Set up audio context
+
       this.audioContext = new AudioContext();
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 256;
-      
-      const audioSource = this.audioContext.createMediaStreamSource(this.mediaStream);
+
+      const audioSource = this.audioContext.createMediaStreamSource(
+        this.mediaStream,
+      );
       audioSource.connect(this.analyser);
 
-      console.log('Blob audio capture activated!');
+      console.log("Blob audio capture activated!");
       return this.analyser;
-
     } catch (error) {
-      console.error('Blob capture failed:', error);
-      throw new Error('Audio capture unavailable. Please ensure audio is playing.');
+      console.error("Blob capture failed:", error);
+      throw new Error(
+        "Audio capture unavailable. Please ensure audio is playing.",
+      );
     }
   }
 
@@ -58,7 +61,7 @@ export class BlobAudioCapture {
       document.body.removeChild(this.iframe);
     }
     if (this.mediaStream) {
-      this.mediaStream.getTracks().forEach(track => track.stop());
+      this.mediaStream.getTracks().forEach((track) => track.stop());
     }
     if (this.audioContext) {
       this.audioContext.close();

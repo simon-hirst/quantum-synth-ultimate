@@ -8,7 +8,6 @@ import (
 	"github.com/gorilla/handlers"
 )
 
-// withStaticCache: long-cache hashed assets, no-store HTML.
 func withStaticCache(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
@@ -26,7 +25,6 @@ func withStaticCache(next http.Handler) http.Handler {
 	})
 }
 
-// WrapPerf: static-cache -> gzip -> CORS (corsMW provided by main.go)
 func WrapPerf(router http.Handler, corsMW func(http.Handler) http.Handler) http.Handler {
 	h := withStaticCache(router)
 	h = handlers.CompressHandlerLevel(h, gzip.BestSpeed)

@@ -20,7 +20,7 @@ func main() {
 		defer conn.Close()
 
 		for {
-			// Read audio data from frontend
+
 			var msg map[string]interface{}
 			err := conn.ReadJSON(&msg)
 			if err != nil {
@@ -28,7 +28,6 @@ func main() {
 				break
 			}
 
-			// Process audio data (could do enhanced processing here)
 			log.Printf("Received audio data: %d samples\n", len(msg["data"].([]interface{})))
 		}
 	})

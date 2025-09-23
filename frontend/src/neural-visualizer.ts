@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from "three";
 
 export class NeuralVisualizer {
   private scene: THREE.Scene;
@@ -11,9 +11,14 @@ export class NeuralVisualizer {
 
   constructor(private canvas: HTMLCanvasElement) {
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    this.camera = new THREE.PerspectiveCamera(
+      75,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000,
+    );
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    
+
     this.init();
   }
 
@@ -47,10 +52,10 @@ export class NeuralVisualizer {
 
   private async connectToAIBackend() {
     try {
-      this.ws = new WebSocket('ws://57.152.76.45:8080/ws');
-      
+      this.ws = new WebSocket("ws://57.152.76.45:8080/ws");
+
       this.ws.onopen = () => {
-        console.log('Connected to AI Visual Processor');
+        console.log("Connected to AI Visual Processor");
         this.startAudioProcessing();
       };
 
@@ -59,11 +64,10 @@ export class NeuralVisualizer {
       };
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error("WebSocket error:", error);
       };
-
     } catch (error) {
-      console.error('Failed to connect to AI backend:', error);
+      console.error("Failed to connect to AI backend:", error);
     }
   }
 
@@ -75,21 +79,20 @@ export class NeuralVisualizer {
           echoCancellation: false,
           noiseSuppression: false,
           sampleRate: 44100,
-          channelCount: 2
-        }
+          channelCount: 2,
+        },
       });
 
       this.audioContext = new AudioContext();
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 2048;
-      
+
       const source = this.audioContext.createMediaStreamSource(stream);
       source.connect(this.analyser);
 
       this.processAudio();
-
     } catch (error) {
-      console.error('Audio capture failed:', error);
+      console.error("Audio capture failed:", error);
     }
   }
 
@@ -97,38 +100,35 @@ export class NeuralVisualizer {
     if (!this.analyser || !this.ws) return;
 
     const data = new Uint8Array(this.analyser.frequencyBinCount);
-    
+
     const processFrame = () => {
       this.analyser!.getByteFrequencyData(data);
-      
-      // Send audio data to AI backend
+
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         const audioData = {
           fft: Array.from(data),
           timestamp: Date.now(),
-          sessionId: Math.random().toString(36).substr(2, 9)
+          sessionId: Math.random().toString(36).substr(2, 9),
         };
         this.ws.send(JSON.stringify(audioData));
       }
-      
+
       requestAnimationFrame(processFrame);
     };
-    
+
     processFrame();
   }
 
   private handleAIMessage(universe: any) {
-    console.log('AI Generated Universe:', universe);
+    console.log("AI Generated Universe:", universe);
     this.createVisualUniverse(universe);
   }
 
   private createVisualUniverse(universe: any) {
-    // Remove existing particles
     if (this.particles) {
       this.scene.remove(this.particles);
     }
 
-    // Create new particle system based on AI generation
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(universe.particleCount * 3);
     const colors = new Float32Array(universe.particleCount * 3);
@@ -138,21 +138,22 @@ export class NeuralVisualizer {
       positions[i + 1] = (Math.random() - 0.5) * 100;
       positions[i + 2] = (Math.random() - 0.5) * 100;
 
-      // Assign colors based on AI-generated palette
-      const colorIndex = Math.floor(Math.random() * universe.colorPalette.length);
+      const colorIndex = Math.floor(
+        Math.random() * universe.colorPalette.length,
+      );
       const color = new THREE.Color(universe.colorPalette[colorIndex]);
       colors[i] = color.r;
       colors[i + 1] = color.g;
       colors[i + 2] = color.b;
     }
 
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
     const material = new THREE.PointsMaterial({
       size: 0.5,
       vertexColors: true,
-      sizeAttenuation: true
+      sizeAttenuation: true,
     });
 
     this.particles = new THREE.Points(geometry, material);
