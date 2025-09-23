@@ -2,12 +2,10 @@ export class ScreenSharingHelper {
   private helperElement: HTMLDivElement | null = null;
 
   showHelper() {
-    // Create helper element if it doesn't exist
     if (!this.helperElement) {
       this.helperElement = this.createHelperElement();
       document.body.appendChild(this.helperElement);
-      
-      // Auto-hide after 10 seconds
+
       setTimeout(() => {
         this.hideHelper();
       }, 10000);
@@ -22,7 +20,7 @@ export class ScreenSharingHelper {
   }
 
   private createHelperElement(): HTMLDivElement {
-    const helper = document.createElement('div');
+    const helper = document.createElement("div");
     helper.innerHTML = `
       <div style="
         position: fixed;

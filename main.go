@@ -60,16 +60,13 @@ func main() {
 
 	router := mux.NewRouter()
 
-	// API
 	router.HandleFunc("/api/shader/next", getNextShader).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/shader/current", getNextShader).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/health", healthCheck).Methods("GET", "OPTIONS")
 	router.HandleFunc("/ws", wsHandler).Methods("GET")
 
-	// Serve frontend
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./frontend/dist/")))
 
-	// CORS
 	corsMiddleware := handlers.CORS(
 		handlers.AllowedOrigins([]string{"*"}),
 		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
@@ -78,7 +75,7 @@ func main() {
 	)
 
 	fmt.Printf("QuantumSynth Infinite server starting on :%s\n", port)
-	// performance-wrapped server with gzip, caching, and timeouts
+
 	handler := WrapPerf(router, corsMiddleware)
 	server := &http.Server{
 		Addr:         ":" + port,
@@ -108,18 +105,15 @@ func getNextShader(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build textures
 	flowW, flowH := 256, 256
-	flowTex := makeFlowField(flowW, flowH) // RG = flow vec mapped to [0..1], B=mag
+	flowTex := makeFlowField(flowW, flowH)
 	flowURL := encodePNGDataURL(flowTex)
 
-	// RD atlas (Gray–Scott)
 	frames, fps := 16, 24
 	gridCols, gridRows := 4, 4
 	atlas, aw, ah := makeRDAtlas(256, 256, frames, gridCols, gridRows)
 	rdURL := encodePNGDataURL(atlas)
 
-	// Composite fragment shader that consumes uFlowTex, uRDAtlas, uStreamTex (+ audio uniforms)
 	fs := serverCompositeFS()
 
 	payload := ShaderParams{
@@ -164,11 +158,9 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-/* ───────────────────────────── WebSocket stream ───────────────────────────── */
-
 var upgrader = websocket.Upgrader{
 	ReadBufferSize: 1024, WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool { return true }, // ACA ingress handles fronting
+	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
 type subMsg struct {
@@ -189,7 +181,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	var wdt, hgt, fps int = 256, 256, 24
 
-	// read one subscribe message optionally
 	c.SetReadLimit(1 << 20)
 	c.SetReadDeadline(time.Now().Add(10 * time.Second))
 	_, data, err := c.ReadMessage()
@@ -207,13 +198,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	_ = c.SetReadDeadline(time.Time{}) // no further reads required
+	_ = c.SetReadDeadline(time.Time{})
 
-	// start wave simulation streamer
 	stop := make(chan struct{})
 	go streamWaves(c, wdt, hgt, fps, stop)
 
-	// keep the connection alive with pings
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -228,7 +217,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func streamWaves(conn *websocket.Conn, w, h, fps int, stop chan struct{}) {
-	// simple 2D wave equation with occasional impulses
+
 	if w < 16 {
 		w = 16
 	}
@@ -240,14 +229,13 @@ func streamWaves(conn *websocket.Conn, w, h, fps int, stop chan struct{}) {
 	}
 	dt := 1.0 / float64(fps)
 	c2 := 0.25
-	alpha := 0.001 // damping
+	alpha := 0.001
 
 	N := w * h
 	uPrev := make([]float64, N)
 	u := make([]float64, N)
 	uNext := make([]float64, N)
 
-	// initial ripples
 	for i := 0; i < 6; i++ {
 		x := rand.Intn(w)
 		y := rand.Intn(h)
@@ -259,11 +247,11 @@ func streamWaves(conn *websocket.Conn, w, h, fps int, stop chan struct{}) {
 
 	header := func() []byte {
 		buf := &bytes.Buffer{}
-		buf.WriteString("FRAMEv1") // 7 bytes
-		buf.WriteByte(0x00)        // pad to 8
+		buf.WriteString("FRAMEv1")
+		buf.WriteByte(0x00)
 		_ = binary.Write(buf, binary.LittleEndian, uint32(w))
 		_ = binary.Write(buf, binary.LittleEndian, uint32(h))
-		_ = binary.Write(buf, binary.LittleEndian, uint32(4)) // RGBA
+		_ = binary.Write(buf, binary.LittleEndian, uint32(4))
 		return buf.Bytes()
 	}()
 
@@ -274,14 +262,13 @@ func streamWaves(conn *websocket.Conn, w, h, fps int, stop chan struct{}) {
 		case <-stop:
 			return
 		case <-ticker.C:
-			// random impulses
+
 			if rand.Float64() < 0.12 {
 				x := rand.Intn(w)
 				y := rand.Intn(h)
 				u[y*w+x] += 1.0 + 1.0*rand.Float64()
 			}
 
-			// update wave: uNext = 2u - uPrev + c^2 * lap(u) - alpha * u
 			for y := 1; y < h-1; y++ {
 				for x := 1; x < w-1; x++ {
 					i := y*w + x
@@ -290,10 +277,9 @@ func streamWaves(conn *websocket.Conn, w, h, fps int, stop chan struct{}) {
 					uNext[i] = 2*u[i] - uPrev[i] + c2*(uxx+uyy) - alpha*u[i]
 				}
 			}
-			// rotate buffers
+
 			uPrev, u, uNext = u, uNext, uPrev
 
-			// normalize and pack to RGBA
 			var minV, maxV float64 = 9e9, -9e9
 			for i := 0; i < N; i++ {
 				if u[i] < minV {
@@ -323,7 +309,6 @@ func streamWaves(conn *websocket.Conn, w, h, fps int, stop chan struct{}) {
 				px[j+3] = 255
 			}
 
-			// write frame
 			out := make([]byte, len(header)+len(px))
 			copy(out, header)
 			copy(out[len(header):], px)
@@ -333,8 +318,6 @@ func streamWaves(conn *websocket.Conn, w, h, fps int, stop chan struct{}) {
 		}
 	}
 }
-
-/* ───────────────────────────── Flow field texture ─────────────────────────── */
 
 func makeFlowField(w, h int) *image.NRGBA {
 	img := image.NewNRGBA(image.Rect(0, 0, w, h))
@@ -349,16 +332,16 @@ func makeFlowField(w, h int) *image.NRGBA {
 			r := math.Hypot(px, py) / rmax
 			_ = r
 			ang := math.Atan2(py, px)
-			// swirl + orbital flow with mild noise
+
 			spin := 1.2 + 0.8*math.Sin(2.0*ang)
 			vx := -py / rmax * spin
 			vy := px / rmax * spin
-			// radial push on bass
+
 			vx += 0.15 * px / rmax
 			vy += 0.15 * py / rmax
 			mag := math.Min(1.0, math.Hypot(vx, vy)*1.2)
 
-			r8 := byte(((vx*0.5 + 0.5) * 255.0) + 0.5) // map [-1,1] -> [0,1]
+			r8 := byte(((vx*0.5 + 0.5) * 255.0) + 0.5)
 			g8 := byte(((vy*0.5 + 0.5) * 255.0) + 0.5)
 			b8 := byte(mag*255.0 + 0.5)
 
@@ -371,8 +354,6 @@ func makeFlowField(w, h int) *image.NRGBA {
 	}
 	return img
 }
-
-/* ───────────────────────────── Gray–Scott RD atlas ────────────────────────── */
 
 type rdField struct {
 	u []float64
@@ -391,7 +372,7 @@ func newRD(w, h int) *rdField {
 		f.u[i] = 1.0
 		f.v[i] = 0.0
 	}
-	// seeds
+
 	for n := 0; n < 6; n++ {
 		cx := rand.Intn(w)
 		cy := rand.Intn(h)
@@ -419,7 +400,7 @@ func (f *rdField) step(Du, Dv, feed, kill, dt float64) {
 			u := f.u[i]
 			v := f.v[i]
 			uvv := u * v * v
-			// Laplacian 5-point
+
 			lapU := f.u[i-1] + f.u[i+1] + f.u[i-w] + f.u[i+w] - 4*u
 			lapV := f.v[i-1] + f.v[i+1] + f.v[i-w] + f.v[i+w] - 4*v
 			u2[i] = u + (Du*lapU-uvv+feed*(1.0-u))*dt
@@ -450,7 +431,6 @@ func makeRDAtlas(w, h, frames, cols, rows int) (*image.NRGBA, int, int) {
 	aw, ah := cols*cellW, rows*cellH
 	atlas := image.NewNRGBA(image.Rect(0, 0, aw, ah))
 
-	// Tuned params (classic "coral" / "mixed")
 	Du, Dv := 0.16, 0.08
 	feed, kill := 0.060, 0.062
 	dt := 1.0
@@ -466,13 +446,13 @@ func makeRDAtlas(w, h, frames, cols, rows int) (*image.NRGBA, int, int) {
 	for step := 0; step < totalSteps && frame < frames; step++ {
 		f.step(Du, Dv, feed, kill, dt)
 		if step%captureEvery == 0 {
-			// render V as luminance with soft palette
+
 			img := image.NewNRGBA(image.Rect(0, 0, w, h))
 			for y := 0; y < h; y++ {
 				for x := 0; x < w; x++ {
 					i := y*w + x
 					v := f.v[i]
-					// simple palette
+
 					r := uint8(255 * math.Min(1, math.Max(0, 0.5+0.8*v)))
 					g := uint8(255 * math.Min(1, math.Max(0, 0.35+0.9*v)))
 					b := uint8(255 * math.Min(1, math.Max(0, 0.4+0.7*v)))
@@ -489,16 +469,12 @@ func makeRDAtlas(w, h, frames, cols, rows int) (*image.NRGBA, int, int) {
 	return atlas, aw, ah
 }
 
-/* ───────────────────────────── Utilities ─────────────────────────────── */
-
 func encodePNGDataURL(img image.Image) string {
 	var buf bytes.Buffer
 	_ = png.Encode(&buf, img)
 	base := base64.StdEncoding.EncodeToString(buf.Bytes())
 	return "data:image/png;base64," + base
 }
-
-/* ───────────────────────────── Server shader ─────────────────────────── */
 
 func serverCompositeFS() string {
 	return `
@@ -507,15 +483,15 @@ varying vec2 vUV;
 
 uniform vec2  uRes;
 uniform float uTime, uLevel, uBeat, uImpact;
-uniform vec3  uBands; // low, mid, air
-uniform sampler2D uFlowTex;   // RG = flow vec mapped [0..1], B=mag
-uniform sampler2D uRDAtlas;   // sprite atlas
-uniform sampler2D uStreamTex; // waves over WS
+uniform vec3  uBands;
+uniform sampler2D uFlowTex;
+uniform sampler2D uRDAtlas;
+uniform sampler2D uStreamTex;
 
-uniform vec2  uAtlasGrid;   // cols, rows
-uniform float uAtlasFrames; // total frames
-uniform float uAtlasFPS;    // nominal fps
-uniform float uFrame;       // current frame (frontend sets based on time)
+uniform vec2  uAtlasGrid;
+uniform float uAtlasFrames;
+uniform float uAtlasFPS;
+uniform float uFrame;
 
 vec3 pal(float t){ return 0.5 + 0.5*cos(6.2831*(vec3(0.0,0.33,0.67)+t)); }
 
@@ -538,26 +514,20 @@ void main(){
   vec2 uv = vUV;
   vec2 flow = sampleFlow(uv);
 
-  // advect by flow + tiny curl for motion richness
   float curl = sin((uv.x+uv.y)*18.0 + uTime*2.1) * 0.003;
   vec2 adv = uv + flow + vec2(-flow.y, flow.x) * curl;
 
-  // RD atlas animation
   float f = uFrame;
   vec3 rd = texture2D(uRDAtlas, atlasUV(fract(adv), f)).rgb;
 
-  // Wave stream (server WS)
   vec3 waves = texture2D(uStreamTex, adv*vec2(1.0,1.0)).rgb;
 
-  // Color composition: RD as base, modulated by bands; waves add sparkle/rings
   vec3 base = rd * (0.45 + 1.35*uLevel + 0.60*uBands.y);
   float rings = waves.r;
   vec3 tone = mix(base, base*pal(0.1 + uBands.z*0.3 + uTime*0.05), 0.35 + 0.4*rings);
 
-  // Kick punch & beat flashes
   tone += vec3(0.9,0.5,1.0) * (0.18*uBeat + 0.12*uImpact);
 
-  // Vignette
   vec2 p = uv - 0.5; float r2 = dot(p,p);
   float vig = smoothstep(0.95, 0.2, r2*(1.0 + 0.25*uBands.z));
   vec3 col = tone * vig;
