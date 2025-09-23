@@ -305,7 +305,7 @@ float column(vec2 p, float offset, float width){
 void main(){
   vec2 uv = vUV;
   vec2 p = toAspect(uv);
-  float t = uTime * 0.9;
+  float t = uTime * 0.6;
   float bass = uLow;
   float mid = uMid;
   float treble = uAir;
