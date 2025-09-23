@@ -10,11 +10,11 @@ Beautiful, **music-reactive** WebGL visuals that run in your browser. Point it a
 ## Highlights
 
 - **Tasteful, reactive presets** — five hand-picked scenes that feel alive:
-  - `auroraFlow` — silky aurora curtains driven by bass & highs
-  - `liquidSpectrum` — domain-warped fluid with musical contour lines
-  - `neonParticles` — drifting neon bokeh that swells on the beat
-  - `ribbonWaves` — glossy ribbon fields locked to the waveform
-  - `glassCells` — animated cells with spec-contour glow
+  - `bassBloom` — pulsing bloom ring with harmonic ripples
+  - `auroraVeil` — luminous aurora curtains and drifting fireflies
+  - `waveTunnel` — spiralling tunnel of waveform-driven energy
+  - `lumenOrbit` — nebular core surrounded by orbiting light ribbons
+  - `prismRain` — cascading crystalline rain synced to the beat
 - **Audio-aware**: bass/mid/air bands, beat/impact detection, light AGC
 - **Zero config** front-end: open the page, hit **Start Screen Sharing**, and vibe
 - **Server shader** support: hot-load a server-provided shader for experiments
