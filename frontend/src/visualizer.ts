@@ -138,46 +138,61 @@ void main(){
 }
 `;
 
-const FS_QUANTUM_LATTICE = `
+const FS_STAR_GARDEN = `
 ${PRELUDE}${NOISE}${AUDIO_UNI}
-vec2 warpGrid(vec2 p, float t, float bass, float treble){
-  vec2 w = p;
-  w += 0.22 * vec2(
-    fbm(p * (3.1 + 1.4 * treble) + vec2(t * 0.6, -t * 0.45)),
-    fbm(p.yx * (2.8 + 1.0 * bass) + vec2(-t * 0.5, t * 0.55))
-  );
-  return w;
+float bloom(vec2 p, float radius, float width){
+  float d = length(p);
+  float x = (d - radius) / max(0.0001, width);
+  return exp(-x * x);
 }
 void main(){
   vec2 uv = vUV;
   vec2 p = toAspect(uv);
-  float t = uTime * 0.7;
+  float t = uTime * 0.6;
   float bass = uLow;
   float mid = uMid;
   float treble = uAir;
-  vec2 grid = warpGrid(p, t, bass, treble) * (3.2 + 1.4 * mid);
-  vec2 cell = fract(grid) - 0.5;
-  vec2 id = floor(grid);
-  float cross = (1.0 - smoothstep(0.08, 0.42, abs(cell.x))) + (1.0 - smoothstep(0.08, 0.42, abs(cell.y)));
-  float frame = smoothstep(0.22, 0.52, max(abs(cell.x), abs(cell.y)));
-  float core = exp(-dot(cell, cell) * (32.0 + 18.0 * treble));
-  float gate = (1.0 - smoothstep(0.0, 0.28, abs(cell.x + cell.y))) * (1.0 - smoothstep(0.0, 0.28, abs(cell.x - cell.y)));
-  float idHash = hash(id);
-  float ripple = sin(t * (1.6 + bass * 2.1) + idHash * 6.28318);
-  float spec = specAt(fract(idHash + t * 0.09));
-  float wave = waveAt(fract(0.5 * (atan(p.y, p.x) / 3.14159 + 1.0) + t * 0.11));
-  vec3 tintA = pal(fract(idHash + bass * 0.25), vec3(0.25,0.28,0.35), vec3(0.35,0.4,0.5), vec3(1.0,1.0,1.0), vec3(0.1,0.33,0.66));
-  vec3 tintB = pal(fract(idHash + 0.47), vec3(0.12,0.18,0.4), vec3(0.45,0.38,0.55), vec3(0.9,0.9,1.1), vec3(0.2,0.11,0.6));
-  vec3 lattice = mix(tintA, tintB, smoothstep(-0.2, 0.6, ripple + spec));
-  float glow = frame * (0.3 + 1.8 * uImpact + 1.2 * spec);
-  float sparks = cross * (0.1 + 0.9 * treble) + core * (0.2 + 2.0 * wave) + gate * (0.2 + 0.8 * treble);
-  vec3 base = vec3(0.02,0.03,0.06) + vec3(0.08,0.12,0.16) * fbm(p * 4.0 + vec2(t * 0.3, -t * 0.25));
-  vec3 col = base;
-  col += lattice * (glow * (0.4 + 1.6 * uLevel) + sparks);
-  col += vec3(0.25,0.6,1.2) * core * (0.3 + 1.5 * uBeat + 1.1 * uImpact);
-  col = mix(col, col.bgr, 0.2 + 0.3 * treble);
-  col *= vignette(uv);
-  gl_FragColor = vec4(col,1.0);
+  vec2 swirl = rot(p, 0.25 * sin(t * 0.5 + bass * 1.4));
+  float radius = length(swirl) + 1e-4;
+  float angle = atan(swirl.y, swirl.x);
+  float wave = waveAt(fract(radius + t * 0.08));
+  float spec = specAt(fract(0.5 * (angle / 3.14159 + 1.0) + t * 0.05));
+  vec3 nebula = pal(
+    fract(radius * 1.3 + t * 0.15 + bass * 0.3),
+    vec3(0.18,0.18,0.28),
+    vec3(0.32,0.42,0.55),
+    vec3(1.0,1.0,1.0),
+    vec3(0.1,0.23,0.5)
+  );
+  vec3 bloomCol = pal(
+    fract(angle * 0.12 + treble * 0.4),
+    vec3(0.4,0.2,0.3),
+    vec3(0.5,0.3,0.4),
+    vec3(1.0,0.7,0.6),
+    vec3(0.2,0.1,0.05)
+  );
+  vec3 field = vec3(0.01,0.015,0.025) + nebula * (0.4 + 1.6 * bass + 0.8 * mid);
+  float petals = 0.5 + 0.5 * cos(angle * 6.0 + fbm(swirl * 3.2 + vec2(t * 0.4, -t * 0.35)) * 4.0);
+  float petalBloom = bloom(swirl, 0.32 + 0.18 * bass, 0.16 + 0.05 * mid);
+  float halo = bloom(swirl, 0.7 + 0.3 * bass, 0.45 + 0.15 * treble);
+  vec2 drift = swirl * (3.0 + 1.2 * mid) + vec2(t * 0.8, -t * 0.7);
+  vec3 stars = vec3(0.0);
+  for(int i=0;i<3;i++){
+    float fi = float(i);
+    vec2 layer = drift + vec2(fi * 7.17, fi * 3.91);
+    vec2 cell = floor(layer);
+    vec2 f = fract(layer) - 0.5;
+    float sparkle = exp(-dot(f,f) * (20.0 + 15.0 * treble));
+    float twinkle = sin(t * (3.0 + fi * 1.2) + hash(cell + fi) * 12.0);
+    stars += vec3(0.3 + 0.7 * treble, 0.45 + 0.4 * wave, 0.8 + 0.5 * spec) * sparkle * (0.1 + 0.4 * twinkle);
+  }
+  float dust = fbm(swirl * 5.5 + vec2(-t * 0.9, t * 0.7));
+  field += bloomCol * petalBloom * (0.6 + 1.3 * uBeat + 1.1 * uImpact) * petals;
+  field += vec3(0.2,0.4,0.9) * halo * (0.2 + 1.2 * treble + 0.8 * spec);
+  field += stars * (0.4 + 0.8 * treble);
+  field += vec3(0.05,0.08,0.12) * dust;
+  field *= vignette(uv);
+  gl_FragColor = vec4(field, 1.0);
 }
 `;
 
@@ -225,60 +240,67 @@ void main(){
 }
 `;
 
-const FS_SOLAR_SPIRAL = `
+const FS_CHROMA_VORTEX = `
 ${PRELUDE}${NOISE}${AUDIO_UNI}
-float flare(vec2 p, float radius, float falloff){
-  float r = length(p);
-  float x = r / max(0.0001, radius);
-  return exp(-pow(x, falloff));
+float arc(vec2 p, float radius, float width){
+  float d = length(p);
+  float x = (d - radius) / max(0.0001, width);
+  return exp(-x * x);
 }
 void main(){
   vec2 uv = vUV;
   vec2 p = toAspect(uv);
-  float t = uTime * 0.8;
+  float t = uTime * 0.85;
   float bass = uLow;
   float mid = uMid;
   float treble = uAir;
-  float angle = atan(p.y, p.x);
   float radius = length(p) + 1e-4;
-  float swirl = angle * (2.0 + 0.6 * treble) - radius * (6.0 + 2.5 * mid) + t * (1.8 + 0.8 * bass);
-  float burst = cos(radius * (18.0 + 10.0 * bass) - t * (3.0 + 0.7 * treble));
-  float wave = waveAt(fract(0.5 * (angle / 3.14159 + 1.0) + t * 0.12));
-  float spec = specAt(fract(radius * 0.5 + t * 0.05));
-  float corona = flare(p, 0.3 + 0.18 * bass + 0.12 * uImpact, 2.2);
-  float halo = flare(p, 0.85 + 0.28 * bass, 1.6);
-  float beamRaw = abs(sin(angle * (8.0 + 4.0 * treble) + t * (3.6 + 1.1 * mid) + wave * 3.0));
-  float beam = pow(beamRaw, 3.2 - 1.5 * treble);
-  float rings = 0.0;
+  float angle = atan(p.y, p.x);
+  vec2 swirl = rot(p, 0.35 * sin(t * 0.4 + bass * 0.8));
+  vec2 vortex = swirl * (2.5 + 1.2 * mid);
+  float spiral = sin(angle * 6.0 + radius * (12.0 + 4.0 * mid) - t * (2.4 + 1.3 * bass));
+  float flow = fbm(vortex + vec2(t * 0.9, -t * 0.8));
+  float pulses = waveAt(fract(0.5 * (angle / 3.14159 + 1.0) + t * 0.11));
+  float spec = specAt(fract(radius * 0.7 + t * 0.06));
+  float beams = 0.0;
   for(int i=0;i<6;i++){
     float fi = float(i);
-    float target = 0.18 + fi * (0.12 + 0.03 * bass);
-    float width = 0.04 + 0.02 * treble;
-    float ring = exp(-pow((radius - target) / max(0.0001, width), 2.0));
-    rings += ring * (0.25 + 0.5 * sin(t * (1.0 + 0.5 * fi) + fi) + 0.6 * uBeat);
+    float offset = fi * 1.0472;
+    float beam = exp(-pow(sin(angle * 3.0 + offset), 2.0) * (18.0 + 10.0 * treble));
+    beams += beam * (0.3 + 0.6 * sin(t * (1.2 + 0.1 * fi) + fi) + 0.4 * uImpact);
   }
-  vec3 fire = pal(fract(swirl * 0.1 + 0.6 + bass * 0.3), vec3(0.35,0.23,0.16), vec3(0.55,0.35,0.24), vec3(1.0,0.75,0.45), vec3(0.2,0.12,0.05));
-  vec3 plasma = pal(fract(burst * 0.25 + 0.2 + treble * 0.4), vec3(0.12,0.2,0.32), vec3(0.45,0.55,0.9), vec3(0.9,0.85,1.0), vec3(0.4,0.1,0.6));
-  vec3 base = vec3(0.01,0.01,0.015) + vec3(0.04,0.05,0.07) * fbm(p * 2.5 + vec2(t * 0.2, -t * 0.18));
-  vec3 col = base;
-  col += fire * (corona * (0.6 + 1.8 * uLevel) + rings * (0.4 + 1.2 * uImpact));
-  col += plasma * (halo * (0.2 + 1.1 * treble + 0.9 * spec) + beam * (0.2 + 1.0 * wave));
-  col += vec3(0.9,0.6,0.18) * corona * (0.25 + 1.6 * bass + 1.1 * wave);
-  col += vec3(0.18,0.4,1.1) * halo * (0.2 + 0.9 * treble + 0.8 * spec);
-  col = mix(col, vec3(length(col)), 0.08 + 0.2 * treble);
+  float rim = arc(swirl, 0.48 + 0.22 * bass + 0.05 * uImpact, 0.12 + 0.05 * mid);
+  float inner = exp(-pow(radius / (0.42 + 0.3 * bass), 2.0));
+  vec3 base = pal(
+    fract(spiral * 0.2 + 0.55 + bass * 0.1),
+    vec3(0.12,0.18,0.24),
+    vec3(0.4,0.5,0.65),
+    vec3(0.9,0.9,1.0),
+    vec3(0.2,0.25,0.5)
+  );
+  vec3 accent = pal(
+    fract(flow * 0.5 + 0.25 + treble * 0.2),
+    vec3(0.3,0.15,0.2),
+    vec3(0.6,0.35,0.4),
+    vec3(1.0,0.7,0.5),
+    vec3(0.15,0.25,0.3)
+  );
+  vec3 plasma = vec3(0.02,0.03,0.05) + vec3(0.05,0.07,0.09) * fbm(p * 3.0 + vec2(-t * 0.3, t * 0.27));
+  vec3 col = plasma;
+  col += base * (0.35 + 1.4 * inner + 1.0 * flow);
+  col += accent * (0.25 + 1.2 * rim + 1.0 * pulses + 0.9 * spec);
+  col += vec3(0.3,0.8,1.3) * rim * (0.3 + 1.8 * treble + 1.0 * uImpact);
+  col += vec3(1.0,0.5,0.2) * beams * (0.2 + 1.1 * bass + 0.9 * uBeat);
   col *= vignette(uv);
   gl_FragColor = vec4(col, 1.0);
 }
 `;
 
-const FS_HOLOGRAPHIC_MIST = `
+const FS_PRISMATIC_FOUNTAIN = `
 ${PRELUDE}${NOISE}${AUDIO_UNI}
-vec3 mist(vec2 p, float t, float scale, vec3 tint, float sway){
-  float n = fbm(p * scale + vec2(t * 0.3, -t * 0.27));
-  float warp = fbm((p + vec2(sway, -sway)) * (scale * 1.6) + vec2(-t * 0.45, t * 0.41));
-  float ribbon = smoothstep(0.15, 0.8, n + warp * 0.5);
-  float fringe = abs(sin((p.x + p.y) * (6.0 + scale) + t * 2.0));
-  return tint * ribbon * (0.4 + 0.6 * fringe);
+float column(vec2 p, float offset, float width){
+  float x = (p.x - offset) / max(0.0001, width);
+  return exp(-x * x);
 }
 void main(){
   vec2 uv = vUV;
@@ -287,30 +309,51 @@ void main(){
   float bass = uLow;
   float mid = uMid;
   float treble = uAir;
-  float depth = fbm(p * 2.2 + vec2(t * 0.25, -t * 0.2));
-  vec2 swirl = rot(p, 0.4 * sin(t * 0.5 + bass * 1.5));
-  vec2 drift = swirl + vec2(0.3 * sin(t * 0.3 + depth), 0.25 * cos(t * 0.27 + depth));
-  float wave = waveAt(fract(uv.x * 0.6 + t * 0.08));
-  float spec = specAt(fract(uv.y * 0.4 + t * 0.11));
-  vec3 col = vec3(0.01,0.02,0.03);
-  vec3 layerA = mist(drift * (1.6 + 0.8 * mid), t, 2.2 + 1.3 * treble, vec3(0.1,0.4,1.0), wave);
-  vec3 layerB = mist((p + drift * 0.6) * (1.1 + 0.5 * bass), t + 3.1, 1.5 + 0.7 * bass, vec3(0.6,0.2,0.9), spec);
-  vec3 layerC = mist((p * 0.8 + vec2(0.0, depth)) * (2.5 + 1.0 * treble), t - 2.0, 3.0, vec3(0.2,0.9,0.8), wave + spec);
-  float shards = 0.0;
-  for(int i=0;i<12;i++){
+  vec2 flow = p;
+  flow.y += 0.25 * sin(p.x * 4.0 + t * 1.7);
+  flow.x += 0.1 * sin(p.y * 5.0 - t * 1.2);
+  float wave = waveAt(fract(uv.x * 0.7 + t * 0.1));
+  float spec = specAt(fract(uv.y * 0.5 + t * 0.07));
+  float rise = smoothstep(-1.0, 1.0, p.y + 0.5 + bass * 0.2);
+  float fall = smoothstep(1.0, -1.0, p.y - 0.1 - uImpact * 0.2);
+  float columns = 0.0;
+  for(int i=0;i<5;i++){
     float fi = float(i);
-    vec2 dir = normalize(vec2(cos(fi * 0.52), sin(fi * 0.52)));
-    float stripe = abs(dot(p, dir));
-    float blink = sin(t * (2.0 + 0.2 * fi) + fi * 1.7 + bass * 3.0);
-    shards += exp(-stripe * stripe * (8.0 + 6.0 * treble)) * (0.3 + 0.5 * blink);
+    float off = -0.6 + fi * 0.3 + 0.05 * sin(t * (0.8 + 0.3 * fi) + fi);
+    float wid = 0.08 + 0.04 * treble;
+    columns += column(flow, off, wid) * (0.2 + 0.8 * sin(t * (1.1 + 0.2 * fi) + fi * 2.1 + bass * 2.5));
   }
-  float beams = shards * (0.2 + 1.4 * uImpact + 0.8 * uBeat);
-  col += layerA * (0.35 + 1.6 * uLevel);
-  col += layerB * (0.25 + 0.9 * treble + 0.6 * spec);
-  col += layerC * (0.2 + 0.8 * bass + 0.7 * wave);
-  col += vec3(0.15,0.35,1.2) * beams;
-  col += vec3(0.05,0.1,0.2) * fbm(p * 8.0 + vec2(t * 1.1, -t * 1.2));
-  col = mix(col, vec3(length(col)), 0.12 + 0.25 * treble);
+  float spray = fbm(flow * 4.0 + vec2(-t * 0.8, t * 0.85));
+  vec3 base = vec3(0.005,0.01,0.015) + vec3(0.02,0.03,0.05) * fbm(p * 2.2 + vec2(t * 0.3, -t * 0.25));
+  vec3 foam = pal(
+    fract(p.y * 0.5 + t * 0.2 + wave * 0.3),
+    vec3(0.1,0.2,0.35),
+    vec3(0.35,0.5,0.8),
+    vec3(0.9,1.0,1.1),
+    vec3(0.15,0.2,0.35)
+  );
+  vec3 highlights = pal(
+    fract(p.x * 0.6 + spec * 0.5),
+    vec3(0.3,0.15,0.25),
+    vec3(0.6,0.3,0.4),
+    vec3(1.0,0.7,0.5),
+    vec3(0.2,0.1,0.25)
+  );
+  vec3 sprayCol = vec3(0.1,0.35,0.9) * rise * (0.3 + 1.2 * columns + 1.0 * wave);
+  vec3 prismatic = vec3(0.15,0.5,1.2) * fall * (0.2 + 1.4 * treble + 0.9 * spec);
+  vec3 shards = vec3(0.0);
+  for(int i=0;i<8;i++){
+    float fi = float(i);
+    vec2 dir = rot(vec2(0.0, 1.0), fi * 0.7 + treble * 0.2);
+    float streak = exp(-pow(dot(p, vec2(dir.y, -dir.x)) * (6.0 + 4.0 * treble), 2.0));
+    shards += vec3(0.2 + 0.6 * treble, 0.3 + 0.5 * wave, 0.5 + 0.7 * spec) * streak * (0.2 + 0.8 * sin(t * (1.6 + 0.2 * fi) + fi));
+  }
+  vec3 col = base;
+  col += foam * (0.25 + 1.1 * spray + 0.8 * uLevel);
+  col += highlights * (0.2 + 1.0 * columns + 0.8 * uImpact);
+  col += sprayCol + prismatic;
+  col += shards * (0.2 + 0.9 * uBeat + 0.6 * uImpact);
+  col += vec3(0.04,0.08,0.12) * spray;
   col *= vignette(uv);
   gl_FragColor = vec4(col,1.0);
 }
@@ -404,10 +447,10 @@ export class Visualizer {
 
   private scenes = [
     "bassBloom",
-    "quantumLattice",
+    "starGarden",
     "waveTunnel",
-    "solarSpiral",
-    "holographicMist",
+    "chromaVortex",
+    "prismaticFountain",
   ] as const;
   private sceneIdx = 0;
   private nextSwitchAt = 0;
@@ -514,10 +557,10 @@ export class Visualizer {
 
     const sources: Record<string, string> = {
       bassBloom: FS_BASS_BLOOM,
-      quantumLattice: FS_QUANTUM_LATTICE,
+      starGarden: FS_STAR_GARDEN,
       waveTunnel: FS_WAVE_TUNNEL,
-      solarSpiral: FS_SOLAR_SPIRAL,
-      holographicMist: FS_HOLOGRAPHIC_MIST,
+      chromaVortex: FS_CHROMA_VORTEX,
+      prismaticFountain: FS_PRISMATIC_FOUNTAIN,
     };
     for (const [k, src] of Object.entries(sources)) {
       try {
