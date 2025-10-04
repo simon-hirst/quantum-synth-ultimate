@@ -4174,6 +4174,65 @@ export function wsUrl(path: string, override?: string) {
 }
 </file>
 
+<file path=".github/workflows/frontend-deploy.yml">
+name: Frontend Deploy
+
+on:
+  push:
+    branches: [ "master", "main" ]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-deploy.yml"
+      - "README.md"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      # Upload the built assets to Azure Storage static website ($web)
+      # Requires repository secret: AZURE_STORAGE_KEY
+      - name: Deploy to Azure Storage
+        uses: azure/CLI@v1
+        with:
+          azcliversion: 2.62.0
+          inlineScript: |
+            if [ -z "${AZURE_STORAGE_KEY:-}" ]; then
+              echo "::warning::AZURE_STORAGE_KEY secret not provided. Skipping static site deployment."
+              exit 0
+            fi
+
+            set -euo pipefail
+            az storage blob upload-batch \
+              --source frontend/dist \
+              --destination '$web' \
+              --account-name quantumsynthstorage \
+              --auth-mode key \
+              --account-key "${AZURE_STORAGE_KEY}" \
+              --overwrite true
+        env:
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+</file>
+
 <file path="frontend/src/neural-visualizer.ts">
 import * as THREE from "three";
 import { wsUrl } from "./backend-config";
@@ -4202,6 +4261,73 @@ async function parseWsMessage(data: unknown): Promise<
   } catch {}
   return null;
 }
+
+const frag = /* glsl */`
+  precision highp float;
+  varying vec2 vUv;
+  uniform float uTime;
+  uniform vec2  uRes;
+  uniform float uBass;
+  uniform float uMid;
+  uniform float uHigh;
+  uniform vec3  uTint;   // NEW
+
+  float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }
+
+  void main() {
+    vec2 uv = vUv;
+    uv -= 0.5;
+    uv.x *= uRes.x / uRes.y;
+
+    float bass = clamp(uBass, 0.0, 1.0);
+    float mid  = clamp(uMid,  0.0, 1.0);
+    float high = clamp(uHigh, 0.0, 1.0);
+
+    float t = uTime * (0.2 + 0.8*mid);
+    float r = length(uv);
+    float a = atan(uv.y, uv.x);
+
+    float ripple = sin(10.0*r - t*6.2831) * (0.2 + 0.8*bass);
+    float swirl  = sin(a*6.0 + t*2.0) * (0.1 + 0.6*high);
+    float bands  = sin((r*30.0 + a*4.0) + t*3.0) * (0.2 + mid);
+
+    float m = ripple + swirl + bands;
+    vec3 col = vec3(0.05,0.05,0.06);
+    col += uTint * max(0.0, m);   // use tint
+
+    col *= smoothstep(1.2, 0.2, r);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+
+private uniforms = {
+  uTime: { value: 0 },
+  uRes:  { value: new THREE.Vector2(1,1) },
+  uBass: { value: 0 },
+  uMid:  { value: 0 },
+  uHigh: { value: 0 },
+  uTint: { value: new THREE.Vector3(0.9, 0.5, 1.2) }, // NEW
+};
+private visualGain = 1.0; // NEW
+
+setGain(v: number) { this.visualGain = Math.max(0.1, Math.min(5, v)); }
+setTheme(name: "Purple"|"Neon"|"Sunset") {
+  this.uniforms.uRes.value.set(window.innerWidth, window.innerHeight);
+
+  if (name === "Neon")    t.set(0.5, 1.2, 1.2);
+  else if (name === "Sunset") t.set(1.2, 0.8, 0.4);
+  else                    t.set(0.9, 0.5, 1.2); // Purple default
+}
+
+
+const g = this.visualGain;
+return {
+  bass: Math.min(1, range(20, 140)   * g),
+  mid:  Math.min(1, range(140, 2000) * g),
+  high: Math.min(1, range(2000,8000) * g),
+};
+
 
 export class NeuralVisualizer {
   // canvases
@@ -4421,65 +4547,6 @@ export class NeuralVisualizer {
     if (this.ws) { this.ws.close(); this.ws = null; }
   }
 }
-</file>
-
-<file path=".github/workflows/frontend-deploy.yml">
-name: Frontend Deploy
-
-on:
-  push:
-    branches: [ "master", "main" ]
-    paths:
-      - "frontend/**"
-      - ".github/workflows/frontend-deploy.yml"
-      - "README.md"
-
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    environment: production
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: "18"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
-
-      # Upload the built assets to Azure Storage static website ($web)
-      # Requires repository secret: AZURE_STORAGE_KEY
-      - name: Deploy to Azure Storage
-        uses: azure/CLI@v1
-        with:
-          azcliversion: 2.62.0
-          inlineScript: |
-            if [ -z "${AZURE_STORAGE_KEY:-}" ]; then
-              echo "::warning::AZURE_STORAGE_KEY secret not provided. Skipping static site deployment."
-              exit 0
-            fi
-
-            set -euo pipefail
-            az storage blob upload-batch \
-              --source frontend/dist \
-              --destination '$web' \
-              --account-name quantumsynthstorage \
-              --auth-mode key \
-              --account-key "${AZURE_STORAGE_KEY}" \
-              --overwrite true
-        env:
-          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
 </file>
 
 <file path="go.mod">
@@ -5825,6 +5892,25 @@ function button(label: string, onClick: () => void) {
   b.onclick = onClick;
   return b;
 }
+
+// Sensitivity (gain)
+{
+  const gain = document.createElement("input");
+  gain.type = "range"; gain.min = "0.1"; gain.max = "5"; gain.step = "0.1"; gain.value = "1";
+  gain.oninput = () => viz.setGain(parseFloat(gain.value));
+  wrap.append(label("Sensitivity", gain));
+}
+// Theme
+{
+  const theme = document.createElement("select");
+  ["Purple","Neon","Sunset"].forEach(n => {
+    const o = document.createElement("option"); o.value=n; o.text=n; theme.append(o);
+  });
+  theme.onchange = () => viz.setTheme(theme.value as any);
+  theme.value = "Purple";
+  wrap.append(label("Theme", theme));
+}
+
 
 (function mountCaptureOverlay() {
   const wrap = document.createElement("div");

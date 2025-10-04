@@ -76,7 +76,10 @@ func main() {
 
 	fmt.Printf("QuantumSynth Infinite server starting on :%s\n", port)
 
-	handler := WrapPerf(router, corsMiddleware)
+	handler := handlers.CORS(corsOpts...)(handlers.ProxyHeaders(router))
+if os.Getenv("ENABLE_SECURITY_HEADERS") == "1" {
+    handler = securityHeaders(handler)
+}
 	server := &http.Server{
 		Addr:         ":" + port,
 		Handler:      handler,

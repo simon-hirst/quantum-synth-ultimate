@@ -13,6 +13,44 @@ if (!canvas) {
 
 const viz = new NeuralVisualizer(canvas);
 
+function copy(text: string) {
+  navigator.clipboard?.writeText(text).catch(() => {});
+}
+
+function sharePanel() {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "position:fixed;bottom:10px;right:10px;z-index:30;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);color:#fff;font:13px system-ui;padding:10px 12px;border-radius:12px;display:flex;gap:10px;align-items:center";
+
+  const btn = (label:string, on:()=>void) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.style.cssText = "padding:6px 10px;border:0;border-radius:8px;background:#10B981;color:#000;cursor:pointer;font-weight:600";
+    b.onclick = on; return b;
+  };
+
+  const url = location.origin; // when tunneled, this is your https://*.trycloudflare.com
+  const link = document.createElement("a");
+  link.href = url; link.textContent = url;
+  link.style.cssText = "color:#fff;text-decoration:underline;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+
+  const qrBtn = btn("QR", async () => {
+    const dlg = document.createElement("div");
+    dlg.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:40";
+    const box = document.createElement("div");
+    box.style.cssText = "background:#111;padding:16px;border-radius:12px;display:flex;flex-direction:column;gap:8px;align-items:center";
+    const canvas = document.createElement("canvas");
+    await QRCode.toCanvas(canvas, url, { margin: 1, width: 240 });
+    const close = btn("Close", () => dlg.remove());
+    box.append(canvas, close);
+    dlg.append(box);
+    document.body.append(dlg);
+  });
+
+  wrap.append(link, btn("Copy", ()=>copy(url)), qrBtn);
+  document.body.append(wrap);
+}
+sharePanel();
+
 function button(label: string, onClick: () => void) {
   const b = document.createElement("button");
   b.textContent = label;
