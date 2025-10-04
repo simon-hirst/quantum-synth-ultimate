@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { wsUrl } from "./backend-config";
 
 export class NeuralVisualizer {
   private scene: THREE.Scene;
@@ -50,26 +51,76 @@ export class NeuralVisualizer {
     this.scene.add(directionalLight);
   }
 
-  private async connectToAIBackend() {
-    try {
-      this.ws = new WebSocket("ws://57.152.76.45:8080/ws");
+  private handleBinaryFrame(buf: ArrayBuffer) {
+  // Interpret as float32 PCM or magnitudes; downsample to ~64 bars
+  const samples = new Float32Array(buf);
+  if (!samples.length) return;
 
-      this.ws.onopen = () => {
-        console.log("Connected to AI Visual Processor");
-        this.startAudioProcessing();
-      };
+  const canvas = (this as any).canvas as HTMLCanvasElement; // adapt to your field
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
 
-      this.ws.onmessage = (event) => {
-        this.handleAIMessage(JSON.parse(event.data));
-      };
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
 
-      this.ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
-      };
-    } catch (error) {
-      console.error("Failed to connect to AI backend:", error);
+  const bars = 64;
+  const binSize = Math.max(1, Math.floor(samples.length / bars));
+  for (let i = 0; i < bars; i++) {
+    let acc = 0;
+    for (let j = 0; j < binSize; j++) {
+      const v = samples[i * binSize + j] ?? 0;
+      acc += Math.abs(v);
     }
+    const avg = acc / binSize;                // 0..1-ish
+    const barH = Math.min(h, avg * h * 0.9);  // scale
+    const x = (i / bars) * w;
+    const bw = Math.max(2, (w / bars) * 0.8);
+    ctx.fillRect(x, h - barH, bw, barH);
   }
+}
+
+
+  private async connectToAIBackend() {
+  try {
+    // create and ASSIGN the socket
+    this.ws = new WebSocket(wsUrl("/ws", import.meta.env?.VITE_BACKEND_BASE));
+
+
+    this.ws.onopen = () => {
+      console.log("Connected to AI Visual Processor");
+      this.startAudioProcessing();
+    };
+
+    this.ws.onmessage = async (event) => {
+  const parsed = await parseWsMessage(event.data);
+
+  if (!parsed) return;
+
+  if (parsed.kind === "json") {
+    try {
+      // Your existing JSON handler
+      this.handleAIMessage?.(parsed.value);
+    } catch (e) {
+      console.warn("handleAIMessage failed:", e);
+    }
+    return;
+  }
+
+  // Binary fallback: render something from samples
+  try {
+    this.handleBinaryFrame?.(parsed.value);
+  } catch (e) {
+    console.warn("handleBinaryFrame failed:", e);
+  }
+};
+
+    this.ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+  } catch (error) {
+    console.error("Failed to connect to AI backend:", error);
+  }
+}
 
   private async startAudioProcessing() {
     try {
@@ -176,4 +227,28 @@ export class NeuralVisualizer {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
+}
+
+async function parseWsMessage(data: unknown): Promise<{ kind: "json"; value: any } | { kind: "binary"; value: ArrayBuffer } | null> {
+  try {
+    if (typeof data === "string") {
+      return { kind: "json", value: JSON.parse(data) };
+    }
+    if (data instanceof Blob) {
+      // Try to parse as JSON first
+      const text = await data.text();
+      try {
+        return { kind: "json", value: JSON.parse(text) };
+      } catch {
+        // Not JSON — treat as binary
+        return { kind: "binary", value: await data.arrayBuffer() };
+      }
+    }
+    if (data instanceof ArrayBuffer) {
+      return { kind: "binary", value: data };
+    }
+  } catch (e) {
+    console.warn("WS message parse failed:", e);
+  }
+  return null;
 }

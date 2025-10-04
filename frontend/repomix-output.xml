@@ -1,0 +1,2839 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+index.html
+package.json
+src/audio-capture.ts
+src/audio-loopback.ts
+src/audio-processor.js
+src/audio-setup-ui.ts
+src/backend-config.ts
+src/backend-connection.ts
+src/blob-audio.ts
+src/main.ts
+src/neural-visualizer.ts
+src/screen-sharing-helper.ts
+src/stealth-audio.ts
+src/style.css
+src/ui.ts
+src/visualizer.ts
+src/webgl-renderer.ts
+vite.config.ts
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="index.html">
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QuantumSynth Neural Edition</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="quantumCanvas"></canvas>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+</file>
+
+<file path="package.json">
+{
+  "name": "quantum-synth-frontend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/three": "^0.158.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "three": "^0.158.0"
+  }
+}
+</file>
+
+<file path="src/audio-capture.ts">
+export class AudioCapture {
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+
+  async captureAudio(): Promise<AnalyserNode> {
+    try {
+      console.log("Requesting audio capture permissions...");
+
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            displaySurface: "window",
+            width: 1,
+            height: 1,
+            cursor: "never",
+          },
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            sampleRate: 44100,
+            channelCount: 2,
+          } as any,
+        });
+
+        return this.setupAudioContext(stream);
+      } catch (screenError) {
+        console.log("Screen capture failed, trying microphone...");
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            sampleRate: 44100,
+            channelCount: 1,
+          },
+        });
+
+        return this.setupAudioContext(stream);
+      }
+    } catch (error) {
+      console.error("All audio capture methods failed:", error);
+      throw new Error("Please allow audio permissions to use the visualizer");
+    }
+  }
+
+  private setupAudioContext(stream: MediaStream): AnalyserNode {
+    this.audioContext = new AudioContext();
+    this.analyser = this.audioContext.createAnalyser();
+    this.analyser.fftSize = 1024;
+    this.analyser.smoothingTimeConstant = 0.8;
+
+    const source = this.audioContext.createMediaStreamSource(stream);
+    source.connect(this.analyser);
+
+    console.log("Audio context setup complete");
+    return this.analyser;
+  }
+
+  stopCapture() {
+    if (this.audioContext) {
+      this.audioContext.close();
+    }
+  }
+}
+</file>
+
+<file path="src/audio-loopback.ts">
+export class AudioLoopback {
+  private audioContext: AudioContext | null = null;
+  private sourceNode: MediaElementAudioSourceNode | null = null;
+
+  async captureTabAudio(tabId: number): Promise<MediaStream> {
+    return new Promise((resolve, reject) => {
+      if (!(window as any).chrome?.tabCapture) {
+        reject(new Error("Tab capture API not available"));
+        return;
+      }
+
+      (window as any).chrome.tabCapture.capture(
+        { audio: true, video: false },
+        (stream: MediaStream) => {
+          if (stream) {
+            resolve(stream);
+          } else {
+            reject(new Error("Failed to capture tab audio"));
+          }
+        },
+      );
+    });
+  }
+
+  async startLoopback() {
+    try {
+      const iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+      iframe.src = "https://open.spotify.com/";
+      document.body.appendChild(iframe);
+
+      iframe.onload = async () => {
+        try {
+          const stream = await this.captureTabAudio(0);
+          this.setupAudioContext(stream);
+        } catch (error) {
+          console.error("Loopback capture failed:", error);
+          this.fallbackToScreenAudio();
+        }
+      };
+    } catch (error) {
+      console.error("Loopback initialization failed:", error);
+      this.fallbackToScreenAudio();
+    }
+  }
+
+  private setupAudioContext(stream: MediaStream) {
+    this.audioContext = new AudioContext();
+    const source = this.audioContext.createMediaStreamSource(stream);
+    const analyser = this.audioContext.createAnalyser();
+
+    analyser.fftSize = 256;
+    source.connect(analyser);
+
+    return analyser;
+  }
+
+  private fallbackToScreenAudio() {
+    console.log("Falling back to screen audio capture");
+  }
+}
+</file>
+
+<file path="src/audio-processor.js">
+class AudioProcessor extends AudioWorkletProcessor {
+  process(inputs, outputs, parameters) {
+    const input = inputs[0];
+    if (input && input.length > 0) {
+      this.port.postMessage({
+        type: "audioData",
+        data: input[0],
+      });
+    }
+    return true;
+  }
+}
+
+registerProcessor("audio-processor", AudioProcessor);
+</file>
+
+<file path="src/audio-setup-ui.ts">
+export class AudioSetupUI {
+  private overlay: HTMLDivElement;
+  private onSetupComplete: (stream: MediaStream) => void;
+
+  constructor(onSetupComplete: (stream: MediaStream) => void) {
+    this.onSetupComplete = onSetupComplete;
+    this.overlay = this.createOverlay();
+  }
+
+  show() {
+    document.body.appendChild(this.overlay);
+  }
+
+  hide() {
+    if (this.overlay.parentElement) {
+      document.body.removeChild(this.overlay);
+    }
+  }
+
+  private createOverlay(): HTMLDivElement {
+    const overlay = document.createElement("div");
+    overlay.innerHTML = `
+      <div style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.95);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        color: white;
+      ">
+        <div style="
+          background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+          padding: 40px;
+          border-radius: 20px;
+          max-width: 600px;
+          text-align: center;
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+          border: 1px solid #00ffaa33;
+        ">
+          <div style="font-size: 48px; margin-bottom: 20px;">🎵</div>
+          <h2 style="margin: 0 0 16px 0; font-size: 28px; color: #00ffaa;">
+            Enable Audio Visualization
+          </h2>
+          <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #cccccc;">
+            To visualize your system audio, we need to capture your screen with audio. 
+            <strong>Please read the instructions below before proceeding.</strong>
+          </p>
+          
+          <div style="
+            background: rgba(0, 255, 170, 0.1);
+            padding: 20px;
+            border-radius: 12px;
+            margin: 24px 0;
+            text-align: left;
+            border-left: 4px solid #00ffaa;
+          ">
+            <h4 style="margin: 0 0 12px 0; color: #00ffaa;">📋 Important Instructions:</h4>
+            <ol style="margin: 0; padding-left: 20px; color: #cccccc;">
+              <li><strong>First, play your music</strong> (Spotify, YouTube, etc.)</li>
+              <li>Click "Start Visualization" below</li>
+              <li>In the browser popup, select <strong>"Entire Screen"</strong> (works best!)</li>
+              <li><strong style="color: #00ffaa;">CRITICAL:</strong> Check <strong>"Share audio"</strong> ✓</li>
+              <li>Click "Share"</li>
+            </ol>
+            
+            <div style="margin-top: 16px; padding: 12px; background: rgba(0, 0, 0, 0.3); border-radius: 8px;">
+              <strong>💡 Pro Tip:</strong> For the best experience, select "Entire Screen" instead of a specific window or tab.
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 16px; justify-content: center;">
+            <button id="startBtn" style="
+              padding: 16px 32px;
+              background: linear-gradient(135deg, #00ffaa 0%, #00cc88 100%);
+              color: black;
+              border: none;
+              border-radius: 50px;
+              font-size: 16px;
+              font-weight: 600;
+              cursor: pointer;
+              transition: all 0.2s ease;
+              box-shadow: 0 4px 12px rgba(0, 255, 170, 0.3);
+            ">
+              🎵 Start Visualization
+            </button>
+            <button id="cancelBtn" style="
+              padding: 16px 32px;
+              background: rgba(255, 255, 255, 0.1);
+              color: #cccccc;
+              border: 1px solid rgba(255, 255, 255, 0.2);
+              border-radius: 50px;
+              font-size: 16px;
+              cursor: pointer;
+              transition: all 0.2s ease;
+            ">
+              Not Now
+            </button>
+          </div>
+
+          <p style="margin: 24px 0 0 0; font-size: 14px; color: #666;">
+            🔒 Your audio is processed locally and never leaves your browser
+          </p>
+        </div>
+      </div>
+    `;
+
+    overlay.querySelector("#startBtn")!.addEventListener("click", () => {
+      this.startAudioCapture();
+    });
+
+    overlay.querySelector("#cancelBtn")!.addEventListener("click", () => {
+      this.hide();
+    });
+
+    return overlay;
+  }
+
+  private async startAudioCapture() {
+    try {
+      this.updateButtonState("Connecting...");
+
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          cursor: "never",
+          displaySurface: "monitor",
+        },
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          sampleRate: 44100,
+          channelCount: 2,
+        } as any,
+      });
+
+      this.hide();
+      this.onSetupComplete(stream);
+    } catch (error) {
+      console.error("Audio capture failed:", error);
+      this.showError(
+        'Please allow screen sharing to continue. Remember to check "Share audio"!',
+      );
+      this.updateButtonState("Try Again");
+    }
+  }
+
+  private updateButtonState(text: string) {
+    const button = this.overlay.querySelector("#startBtn") as HTMLButtonElement;
+    button.textContent = text;
+    button.disabled = text === "Connecting...";
+  }
+
+  private showError(message: string) {
+    const existingError = this.overlay.querySelector(".error-message");
+    if (existingError) {
+      existingError.remove();
+    }
+
+    const errorDiv = document.createElement("div");
+    errorDiv.className = "error-message";
+    errorDiv.style.cssText = `
+      color: #ff6b6b;
+      margin: 16px 0;
+      padding: 12px;
+      background: rgba(255, 107, 107, 0.1);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 107, 107, 0.3);
+    `;
+    errorDiv.textContent = message;
+
+    const buttonContainer = this.overlay.querySelector(
+      "div > div > div:last-child",
+    );
+    buttonContainer?.parentNode?.insertBefore(errorDiv, buttonContainer);
+  }
+}
+</file>
+
+<file path="src/backend-config.ts">
+export function wsUrl(path: string, override?: string) {
+  // If explicit base provided (like env), use it
+  const base = override || (typeof window !== "undefined" ? window.location.origin : "http://localhost:5173");
+  const url = new URL(path, base);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
+}
+</file>
+
+<file path="src/backend-connection.ts">
+// frontend/src/backend-connection.ts
+import { wsUrl } from "./backend-config";
+
+export class BackendConnection {
+  private ws: WebSocket | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+
+  connect() {
+    const url = wsUrl("/ws", import.meta.env.VITE_BACKEND_BASE);
+    console.log("Connecting to:", url);
+
+    this.ws = new WebSocket(url); // <-- assign to this.ws
+
+    this.ws.onopen = () => {
+      console.log("✅ Connected to AI backend via", url.startsWith("wss:") ? "wss" : "ws");
+      this.reconnectAttempts = 0;
+    };
+
+    this.ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    this.ws.onclose = () => {
+      console.log("WebSocket connection closed");
+      this.handleReconnect();
+    };
+
+    return this.ws;
+  }
+
+  // ...rest unchanged...
+}
+</file>
+
+<file path="src/blob-audio.ts">
+export class BlobAudioCapture {
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private mediaStream: MediaStream | null = null;
+  private iframe: HTMLIFrameElement | null = null;
+
+  async captureAudio(): Promise<AnalyserNode> {
+    try {
+      const blob = new Blob(
+        [
+          `
+        <!DOCTYPE html>
+        <html>
+        <body>
+          <audio id="audioEl" controls style="display:none">
+            <source src="https://cdn.pixabay.com/download/audio/2022/01/18/audio_d1705ab737.mp3?filename=soft-silence-23074.mp3" type="audio/mpeg">
+          </audio>
+          <script>
+            document.getElementById('audioEl').play();
+            setInterval(() => {}, 1000);
+          </script>
+        </body>
+        </html>
+      `,
+        ],
+        { type: "text/html" },
+      );
+
+      const blobUrl = URL.createObjectURL(blob);
+
+      this.iframe = document.createElement("iframe");
+      this.iframe.style.display = "none";
+      this.iframe.src = blobUrl;
+      document.body.appendChild(this.iframe);
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      this.mediaStream = (this.iframe.contentWindow as any).captureStream();
+
+      this.audioContext = new AudioContext();
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 256;
+
+      const audioSource = this.audioContext.createMediaStreamSource(
+        this.mediaStream,
+      );
+      audioSource.connect(this.analyser);
+
+      console.log("Blob audio capture activated!");
+      return this.analyser;
+    } catch (error) {
+      console.error("Blob capture failed:", error);
+      throw new Error(
+        "Audio capture unavailable. Please ensure audio is playing.",
+      );
+    }
+  }
+
+  stopCapture() {
+    if (this.iframe) {
+      document.body.removeChild(this.iframe);
+    }
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach((track) => track.stop());
+    }
+    if (this.audioContext) {
+      this.audioContext.close();
+    }
+  }
+}
+</file>
+
+<file path="src/main.ts">
+import (
+    "encoding/json"
+    "net/http"
+    "os"
+    "strings"
+    "time"
+
+    "github.com/gorilla/handlers"
+    "github.com/gorilla/mux"
+    "github.com/gorilla/websocket"
+)
+
+var (
+    appVersion     = "dev" // overridden via -ldflags "-X main.appVersion=$(GIT_SHA)"
+    appBuildTime   = "unknown"
+
+    // ENV
+    listenAddr     = getenv("PORT", "8080")
+    allowedOrigins = splitAndTrim(os.Getenv("ALLOWED_ORIGINS")) // CSV. Empty = allow all.
+    serveStaticDir = getenv("STATIC_DIR", "./frontend/dist")    // where Vite build outputs
+)
+
+func getenv(k, def string) string {
+    if v := os.Getenv(k); v != "" {
+        return v
+    }
+    return def
+}
+
+func splitAndTrim(csv string) []string {
+    if csv == "" {
+        return nil
+    }
+    parts := strings.Split(csv, ",")
+    out := make([]string, 0, len(parts))
+    for _, p := range parts {
+        t := strings.TrimSpace(p)
+        if t != "" {
+            out = append(out, t)
+        }
+    }
+    return out
+}
+
+function h<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  cls?: string,
+  html?: string,
+) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (html) el.innerHTML = html;
+  return el;
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    _ = json.NewEncoder(w).Encode(map[string]any{
+        "status": "ok",
+        "time":   time.Now().UTC().Format(time.RFC3339),
+    })
+}
+
+func versionHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(map[string]string{
+        "version":   appVersion,
+        "buildTime": appBuildTime,
+    })
+}
+
+var wsUpgrader = websocket.Upgrader{
+    ReadBufferSize:  1024,
+    WriteBufferSize: 1024,
+    CheckOrigin: func(r *http.Request) bool {
+        // Allow all if no allowlist is provided
+        if len(allowedOrigins) == 0 {
+            return true
+        }
+        origin := r.Header.Get("Origin")
+        for _, o := range allowedOrigins {
+            if strings.EqualFold(o, origin) {
+                return true
+            }
+        }
+        return false
+    },
+}
+
+router := mux.NewRouter()
+
+// API routes
+api := router.PathPrefix("/api").Subrouter()
+api.HandleFunc("/health", healthHandler).Methods("GET")
+api.HandleFunc("/version", versionHandler).Methods("GET")
+// keep your other /api/* routes here
+
+// WebSocket handler at /ws (keep your existing handler logic)
+router.HandleFunc("/ws", yourWSHandler)
+
+// Serve static in production (single-page app)
+if info, err := os.Stat(serveStaticDir); err == nil && info.IsDir() {
+    fs := http.FileServer(http.Dir(serveStaticDir))
+    // Serve assets
+    router.PathPrefix("/assets/").Handler(fs)
+    // SPA fallback: let the frontend router handle unknown paths
+    router.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // Serve index.html
+        http.ServeFile(w, r, serveStaticDir+"/index.html")
+    })
+}
+
+// CORS: allowlist if provided, otherwise permissive but NO credentials
+corsOpts := []handlers.CORSOption{
+    handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}),
+    handlers.AllowedHeaders([]string{"Content-Type", "Authorization"}),
+}
+
+if len(allowedOrigins) == 0 {
+    corsOpts = append(corsOpts, handlers.AllowedOrigins([]string{"*"}))
+} else {
+    corsOpts = append(corsOpts, handlers.AllowedOrigins(allowedOrigins))
+}
+
+// Important: do NOT use AllowCredentials with "*" origin. Only enable it if you set explicit origins and truly need cookies.
+handler := handlers.CORS(corsOpts...)(
+    handlers.ProxyHeaders(router), // trust X-Forwarded-* from reverse proxies
+)
+
+// Start server
+srv := &http.Server{
+    Addr:              ":" + listenAddr,
+    Handler:           handler,
+    ReadHeaderTimeout: 5 * time.Second,
+}
+
+if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+    panic(err)
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const root = document.querySelector<HTMLDivElement>("#app");
+  if (!root) return;
+
+  const shell = h("div", "qs-shell");
+  const side = h("aside", "qs-side");
+  const main = h("main", "qs-main");
+
+  side.innerHTML = `
+    <div class="brand">
+      <div class="dot"></div>
+      <div class="title">QuantumSynth</div>
+      <div class="subtitle">Neural Edition</div>
+    </div>
+    <div class="controls">
+      <button id="btnStart" class="btn primary">Start Screen Sharing</button>
+      <button id="btnStop"  class="btn">Stop</button>
+      <button id="btnDemo"  class="btn ghost">Demo Mode</button>
+      <button id="btnPause" class="btn ghost">Pause rotation (P)</button>
+      <div class="status" id="status">Ready</div>
+    </div>
+    <div class="section-title">Setup</div>
+    <ol class="setup">
+      <li>Use <b>Chrome</b> or <b>Edge</b> for best results</li>
+      <li><b>Best compatibility:</b> choose <b>Entire Screen</b> and tick <b>Share audio</b> (DRM tabs often block audio)</li>
+      <li>Select the tab/window you want visualised</li>
+      <li>Press <b>M</b> (or 1–5) to switch visualisations</li>
+    </ol>
+    <div class="built-by">built by <a href="https://github.com/simon-hirst" target="_blank" rel="noreferrer">github.com/simon-hirst</a></div>
+  `;
+
+  const btnToggleSide = h("button", "qs-side-toggle", "◄");
+  btnToggleSide.id = "btnToggleSide";
+  btnToggleSide.title = "Toggle sidebar";
+  side.prepend(btnToggleSide);
+
+  const btnFullscreen = h("button", "qs-fullscreen", "⛶");
+  btnFullscreen.id = "btnFullscreen";
+  btnFullscreen.title = "Fullscreen";
+  main.appendChild(btnFullscreen);
+
+  const canvas = h("canvas", "qs-canvas") as HTMLCanvasElement;
+  canvas.id = "visualizer";
+  main.appendChild(canvas);
+
+  shell.appendChild(side);
+  shell.appendChild(main);
+  root.innerHTML = "";
+  root.appendChild(shell);
+
+  const statusEl = document.getElementById("status") as HTMLDivElement;
+  const btnStart = document.getElementById("btnStart") as HTMLButtonElement;
+  const btnStop = document.getElementById("btnStop") as HTMLButtonElement;
+  const btnDemo = document.getElementById("btnDemo") as HTMLButtonElement;
+  const btnPause = document.getElementById("btnPause") as HTMLButtonElement;
+
+  const viz = new Visualizer(canvas, {
+    onStatus: (s) => {
+      statusEl.textContent = s;
+    },
+    onFps: (fps) => {},
+  });
+
+  const setPauseLabel = () => {
+    btnPause.textContent = viz.isPaused()
+      ? "Resume rotation (P)"
+      : "Pause rotation (P)";
+  };
+
+  btnStart.onclick = async () => {
+    statusEl.textContent = "Requesting screen share…";
+    try {
+      await viz.startScreenShare();
+      statusEl.textContent =
+        "Screen sharing active ✓ — Best compatibility: choose “Entire Screen” + “Share audio”";
+    } catch (e: any) {
+      console.error(e);
+      statusEl.textContent =
+        "Screen share failed. Tip: select “Entire Screen” and enable “Share audio”";
+    }
+  };
+  btnStop.onclick = () => {
+    viz.stopScreenShare();
+    statusEl.textContent = "Stopped";
+  };
+  btnDemo.onclick = () => {
+    viz.setDemoMode(true);
+    statusEl.textContent = "Demo mode active";
+  };
+  btnPause.onclick = () => {
+    viz.togglePause();
+    setPauseLabel();
+  };
+
+  const ro = new ResizeObserver(() => {
+    const w = main.clientWidth,
+      h = main.clientHeight;
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+  });
+  ro.observe(main);
+
+  setPauseLabel();
+
+  viz.start().catch((err) => console.error(err));
+
+  {
+    const shellEl = shell;
+    const btnToggleSide = document.getElementById(
+      "btnToggleSide",
+    ) as HTMLButtonElement | null;
+    const btnFullscreen = document.getElementById(
+      "btnFullscreen",
+    ) as HTMLButtonElement | null;
+
+    if (btnToggleSide) {
+      btnToggleSide.addEventListener("click", () => {
+        shellEl.classList.toggle("side-collapsed");
+        btnToggleSide.textContent = shellEl.classList.contains("side-collapsed")
+          ? "►"
+          : "◄";
+
+        window.dispatchEvent(new Event("resize"));
+      });
+    }
+
+    const requestFs = async (el: any) => {
+      if (el.requestFullscreen) return el.requestFullscreen();
+      if ((el as any).webkitRequestFullscreen)
+        return (el as any).webkitRequestFullscreen();
+      if ((el as any).msRequestFullscreen)
+        return (el as any).msRequestFullscreen();
+    };
+    const exitFs = async () => {
+      if (document.exitFullscreen) return document.exitFullscreen();
+      if ((document as any).webkitExitFullscreen)
+        return (document as any).webkitExitFullscreen();
+      if ((document as any).msExitFullscreen)
+        return (document as any).msExitFullscreen();
+    };
+
+    if (btnFullscreen) {
+      btnFullscreen.addEventListener("click", async () => {
+        const target: any =
+          document.querySelector(".qs-main") || document.documentElement;
+        const fsOn = !!(
+          document.fullscreenElement ||
+          (document as any).webkitFullscreenElement ||
+          (document as any).msFullscreenElement
+        );
+        if (!fsOn) await requestFs(target);
+        else await exitFs();
+      });
+    }
+  }
+});
+
+(() => {
+  try {
+    const shellEl = document.querySelector(".qs-shell") as HTMLElement | null;
+    const sideEl = document.querySelector(".qs-side") as HTMLElement | null;
+    const mainEl = document.querySelector(".qs-main") as HTMLElement | null;
+    if (!shellEl || !sideEl || !mainEl) return;
+
+    let btn = document.getElementById(
+      "btnToggleSide",
+    ) as HTMLButtonElement | null;
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.id = "btnToggleSide";
+      btn.className = "qs-side-toggle";
+      btn.textContent = "◄";
+      btn.title = "Toggle sidebar";
+      sideEl.prepend(btn);
+    }
+    btn.onclick = () => {
+      shellEl.classList.toggle("side-collapsed");
+      btn!.textContent = shellEl.classList.contains("side-collapsed")
+        ? "►"
+        : "◄";
+
+      window.dispatchEvent(new Event("resize"));
+    };
+
+    let fsb = document.getElementById(
+      "btnFullscreen",
+    ) as HTMLButtonElement | null;
+    if (!fsb) {
+      fsb = document.createElement("button");
+      fsb.id = "btnFullscreen";
+      fsb.className = "qs-fullscreen";
+      fsb.textContent = "⛶";
+      fsb.title = "Fullscreen";
+      mainEl.appendChild(fsb);
+    }
+    fsb.onclick = async () => {
+      const target: any = mainEl;
+      const doc: any = document;
+      if (
+        !doc.fullscreenElement &&
+        !doc.webkitFullscreenElement &&
+        !doc.msFullscreenElement
+      ) {
+        (
+          target.requestFullscreen ||
+          target.webkitRequestFullscreen ||
+          target.msRequestFullscreen
+        ).call(target);
+      } else {
+        (
+          doc.exitFullscreen ||
+          doc.webkitExitFullscreen ||
+          doc.msExitFullscreen
+        ).call(doc);
+      }
+    };
+  } catch (e) {
+    console.warn("QS009 injection failed", e);
+  }
+})();
+</file>
+
+<file path="src/neural-visualizer.ts">
+import * as THREE from "three";
+
+export class NeuralVisualizer {
+  private scene: THREE.Scene;
+  private camera: THREE.PerspectiveCamera;
+  private renderer: THREE.WebGLRenderer;
+  private particles: THREE.Points;
+  private ws: WebSocket | null = null;
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+
+  constructor(private canvas: HTMLCanvasElement) {
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(
+      75,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000,
+    );
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+
+    this.init();
+  }
+
+  private async init() {
+    this.setupRenderer();
+    this.setupCamera();
+    this.setupLighting();
+    await this.connectToAIBackend();
+    this.animate();
+  }
+
+  private setupRenderer() {
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setClearColor(0x000000);
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+  }
+
+  private setupCamera() {
+    this.camera.position.z = 50;
+    this.camera.lookAt(0, 0, 0);
+  }
+
+  private setupLighting() {
+    const ambientLight = new THREE.AmbientLight(0x404040);
+    this.scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight.position.set(1, 1, 1);
+    this.scene.add(directionalLight);
+  }
+
+  private async connectToAIBackend() {
+    try {
+      const socket = new WebSocket(wsUrl("/ws", import.meta.env.VITE_BACKEND_BASE));
+
+      this.ws.onopen = () => {
+        console.log("Connected to AI Visual Processor");
+        this.startAudioProcessing();
+      };
+
+      this.ws.onmessage = (event) => {
+        this.handleAIMessage(JSON.parse(event.data));
+      };
+
+      this.ws.onerror = (error) => {
+        console.error("WebSocket error:", error);
+      };
+    } catch (error) {
+      console.error("Failed to connect to AI backend:", error);
+    }
+  }
+
+  private async startAudioProcessing() {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          sampleRate: 44100,
+          channelCount: 2,
+        },
+      });
+
+      this.audioContext = new AudioContext();
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 2048;
+
+      const source = this.audioContext.createMediaStreamSource(stream);
+      source.connect(this.analyser);
+
+      this.processAudio();
+    } catch (error) {
+      console.error("Audio capture failed:", error);
+    }
+  }
+
+  private processAudio() {
+    if (!this.analyser || !this.ws) return;
+
+    const data = new Uint8Array(this.analyser.frequencyBinCount);
+
+    const processFrame = () => {
+      this.analyser!.getByteFrequencyData(data);
+
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        const audioData = {
+          fft: Array.from(data),
+          timestamp: Date.now(),
+          sessionId: Math.random().toString(36).substr(2, 9),
+        };
+        this.ws.send(JSON.stringify(audioData));
+      }
+
+      requestAnimationFrame(processFrame);
+    };
+
+    processFrame();
+  }
+
+  private handleAIMessage(universe: any) {
+    console.log("AI Generated Universe:", universe);
+    this.createVisualUniverse(universe);
+  }
+
+  private createVisualUniverse(universe: any) {
+    if (this.particles) {
+      this.scene.remove(this.particles);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(universe.particleCount * 3);
+    const colors = new Float32Array(universe.particleCount * 3);
+
+    for (let i = 0; i < universe.particleCount * 3; i += 3) {
+      positions[i] = (Math.random() - 0.5) * 100;
+      positions[i + 1] = (Math.random() - 0.5) * 100;
+      positions[i + 2] = (Math.random() - 0.5) * 100;
+
+      const colorIndex = Math.floor(
+        Math.random() * universe.colorPalette.length,
+      );
+      const color = new THREE.Color(universe.colorPalette[colorIndex]);
+      colors[i] = color.r;
+      colors[i + 1] = color.g;
+      colors[i + 2] = color.b;
+    }
+
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: 0.5,
+      vertexColors: true,
+      sizeAttenuation: true,
+    });
+
+    this.particles = new THREE.Points(geometry, material);
+    this.scene.add(this.particles);
+  }
+
+  private animate() {
+    requestAnimationFrame(() => this.animate());
+
+    if (this.particles) {
+      this.particles.rotation.x += 0.001;
+      this.particles.rotation.y += 0.002;
+    }
+
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  resize() {
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+}
+</file>
+
+<file path="src/screen-sharing-helper.ts">
+export class ScreenSharingHelper {
+  private helperElement: HTMLDivElement | null = null;
+
+  showHelper() {
+    if (!this.helperElement) {
+      this.helperElement = this.createHelperElement();
+      document.body.appendChild(this.helperElement);
+
+      setTimeout(() => {
+        this.hideHelper();
+      }, 10000);
+    }
+  }
+
+  hideHelper() {
+    if (this.helperElement && this.helperElement.parentElement) {
+      document.body.removeChild(this.helperElement);
+      this.helperElement = null;
+    }
+  }
+
+  private createHelperElement(): HTMLDivElement {
+    const helper = document.createElement("div");
+    helper.innerHTML = `
+      <div style="
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: #00ffaa;
+        padding: 12px 20px;
+        border-radius: 25px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 14px;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(0, 255, 170, 0.3);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      ">
+        <span>💡 Click "Hide" on the Chrome screen sharing indicator to clean up your view</span>
+        <button style="
+          background: rgba(0, 255, 170, 0.2);
+          border: 1px solid rgba(0, 255, 170, 0.5);
+          color: #00ffaa;
+          border-radius: 15px;
+          padding: 6px 12px;
+          cursor: pointer;
+          font-size: 12px;
+        " onclick="this.parentElement.parentElement.style.display='none'">
+          Got it
+        </button>
+      </div>
+    `;
+    return helper;
+  }
+}
+</file>
+
+<file path="src/stealth-audio.ts">
+export class StealthAudioCapture {
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private mediaStream: MediaStream | null = null;
+  private iframe: HTMLIFrameElement | null = null;
+
+  async captureDesktopAudio(): Promise<AnalyserNode> {
+    try {
+      console.log("Initializing stealth audio capture...");
+
+      this.iframe = document.createElement("iframe");
+      this.iframe.style.display = "none";
+      this.iframe.srcdoc = `
+        <!DOCTYPE html>
+        <html>
+        <body>
+          <script>
+            setTimeout(() => {
+              navigator.mediaDevices.getUserMedia({
+                audio: {
+                  echoCancellation: false,
+                  noiseSuppression: false,
+                  autoGainControl: false,
+                  channelCount: 2,
+                  sampleRate: 44100
+                }
+              }).then(stream => {
+                window.parent.postMessage({ 
+                  type: 'audioStream', 
+                  stream: stream 
+                }, '*');
+              }).catch(error => {
+                window.parent.postMessage({ 
+                  type: 'audioError', 
+                  error: error.message 
+                }, '*');
+              });
+            }, 1000);
+          </script>
+        </body>
+        </html>
+      `;
+
+      document.body.appendChild(this.iframe);
+
+      return new Promise((resolve, reject) => {
+        const handler = (event: MessageEvent) => {
+          if (event.data.type === "audioStream") {
+            window.removeEventListener("message", handler);
+            this.setupAudioContext(event.data.stream);
+            resolve(this.analyser!);
+          } else if (event.data.type === "audioError") {
+            window.removeEventListener("message", handler);
+            reject(new Error(event.data.error));
+          }
+        };
+
+        window.addEventListener("message", handler);
+
+        setTimeout(() => {
+          window.removeEventListener("message", handler);
+          reject(new Error("Audio capture timeout"));
+        }, 5000);
+      });
+    } catch (error) {
+      console.error("Stealth capture failed:", error);
+      throw new Error("Desktop audio capture unavailable");
+    }
+  }
+
+  private setupAudioContext(stream: MediaStream) {
+    this.audioContext = new AudioContext();
+    this.analyser = this.audioContext.createAnalyser();
+    this.analyser.fftSize = 1024;
+    this.analyser.smoothingTimeConstant = 0.8;
+
+    const source = this.audioContext.createMediaStreamSource(stream);
+    source.connect(this.analyser);
+
+    console.log("Stealth audio capture activated!");
+  }
+
+  stopCapture() {
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach((track) => track.stop());
+    }
+    if (this.audioContext) {
+      this.audioContext.close();
+    }
+    if (this.iframe) {
+      document.body.removeChild(this.iframe);
+    }
+  }
+}
+</file>
+
+<file path="src/style.css">
+:root {
+  --bg: #0c0f13;
+  --panel: #0f141a;
+  --panel2: #0b1117;
+  --text: #e6f3ff;
+  --muted: #9fb5c8;
+  --accent: #4af0b5;
+  --accent2: #7ee8fa;
+  --accent3: #b388ff;
+  --ring: rgba(122, 255, 214, 0.35);
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#app {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: radial-gradient(1200px 800px at 10% -10%, #0e1622, #0c0f13 55%),
+    var(--bg);
+  color: var(--text);
+  font:
+    14px/1.5 Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    Ubuntu,
+    Cantarell,
+    Noto Sans,
+    Helvetica,
+    Arial;
+}
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+.qs-shell {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 18px;
+  height: 100%;
+  padding: 18px;
+}
+
+.qs-side {
+  background: linear-gradient(180deg, var(--panel), var(--panel2));
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.brand .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 30% 30%, var(--accent2), var(--accent));
+  box-shadow: 0 0 20px var(--ring);
+}
+.brand .title {
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  font-size: 20px;
+}
+.brand .subtitle {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  margin-bottom: 18px;
+}
+.btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: #121a22;
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--ring);
+  box-shadow: 0 6px 18px rgba(74, 240, 181, 0.12);
+}
+.btn.primary {
+  background: linear-gradient(180deg, #15212b, #121a22);
+  border-color: rgba(74, 240, 181, 0.35);
+}
+.btn.ghost {
+  background: transparent;
+}
+.status {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.section-title {
+  margin-top: 8px;
+  margin-bottom: 6px;
+  color: #b7c9da;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.setup {
+  margin: 0;
+  padding-left: 18px;
+  color: #c7d6e3;
+}
+.setup li {
+  margin: 6px 0;
+}
+.built-by {
+  margin-top: 16px;
+  color: #9db6c9;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.qs-main {
+  position: relative;
+  border-radius: 18px;
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 10px 26px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.qs-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #000 !important;
+}
+
+.qs-shell {
+  position: relative;
+}
+.qs-side {
+  transition:
+    transform 0.25s ease,
+    width 0.25s ease,
+    padding 0.25s ease;
+  will-change: transform;
+}
+.qs-shell.side-collapsed .qs-side {
+  transform: translateX(-100%);
+  width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border: 0 !important;
+}
+.qs-shell.side-collapsed .qs-main {
+  margin-left: 0 !important;
+}
+
+.qs-side-toggle {
+  position: absolute;
+  top: 10px;
+  right: -12px;
+  z-index: 20;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  border-radius: 999px;
+  border: 0;
+  cursor: pointer;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.1);
+  color: #cfe9ff;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.qs-fullscreen {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #dff3ff;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.qs-fullscreen:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.qs-shell {
+  position: relative;
+  display: flex;
+  gap: 0;
+}
+.qs-side {
+  position: relative;
+  flex: 0 0 280px;
+  transition:
+    transform 0.25s ease,
+    width 0.25s ease,
+    padding 0.25s ease;
+  will-change: transform, width;
+}
+.qs-main {
+  flex: 1 1 auto;
+  position: relative;
+}
+.qs-shell.side-collapsed .qs-side {
+  transform: translateX(-100%);
+  width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border: 0 !important;
+}
+.qs-shell.side-collapsed .qs-main {
+  margin-left: 0 !important;
+}
+
+.qs-side-toggle {
+  position: absolute;
+  top: 10px;
+  right: -12px;
+  z-index: 20;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  border-radius: 999px;
+  border: 0;
+  cursor: pointer;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.12);
+  color: #cfe9ff;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.qs-fullscreen {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #dff3ff;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.qs-fullscreen:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.qs-shell {
+  position: relative;
+  display: flex;
+  gap: 0;
+}
+.qs-side {
+  position: relative;
+  flex: 0 0 280px;
+  transition:
+    transform 0.25s ease,
+    width 0.25s ease,
+    padding 0.25s ease;
+  will-change: transform, width;
+}
+.qs-main {
+  flex: 1 1 auto;
+  position: relative;
+}
+.qs-shell.side-collapsed .qs-side {
+  transform: translateX(-100%);
+  width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border: 0 !important;
+}
+.qs-shell.side-collapsed .qs-main {
+  margin-left: 0 !important;
+}
+
+.qs-side-toggle {
+  position: absolute;
+  top: 10px;
+  right: -12px;
+  z-index: 20;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  border-radius: 999px;
+  border: 0;
+  cursor: pointer;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.12);
+  color: #cfe9ff;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.qs-fullscreen {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #dff3ff;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.qs-fullscreen:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.qs-shell {
+  position: relative;
+  display: flex;
+  gap: 0;
+}
+.qs-side {
+  position: relative;
+  flex: 0 0 280px;
+  transition:
+    transform 0.25s ease,
+    width 0.25s ease,
+    padding 0.25s ease;
+}
+.qs-main {
+  flex: 1 1 auto;
+  position: relative;
+}
+.qs-shell.side-collapsed .qs-side {
+  transform: translateX(-100%);
+  width: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+.qs-shell.side-collapsed .qs-main {
+  margin-left: 0 !important;
+}
+
+.qs-side-toggle {
+  position: absolute;
+  top: 10px;
+  right: -12px;
+  z-index: 20;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  border-radius: 999px;
+  border: 0;
+  cursor: pointer;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.12);
+  color: #cfe9ff;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.qs-fullscreen {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #dff3ff;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.qs-fullscreen:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.qs-shell {
+  position: relative;
+  display: flex;
+  gap: 0;
+}
+.qs-side {
+  width: 260px;
+  transition:
+    width 0.25s ease,
+    padding 0.25s ease,
+    transform 0.25s ease;
+  will-change: transform, width;
+}
+.qs-main {
+  position: relative;
+  flex: 1 1 auto;
+}
+
+.qs-shell.side-collapsed .qs-side {
+  width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  overflow: hidden;
+  transform: translateX(-100%);
+}
+.qs-shell.side-collapsed .qs-main {
+  margin-left: 0 !important;
+}
+
+.qs-side-toggle {
+  position: absolute;
+  top: 10px;
+  right: -12px;
+  z-index: 20;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  border-radius: 999px;
+  border: 0;
+  cursor: pointer;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.12);
+  color: #dff3ff;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.qs-fullscreen {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #dff3ff;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.qs-fullscreen:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+</file>
+
+<file path="src/ui.ts">
+export class QuantumSynthUI {
+  private container: HTMLDivElement;
+  private statusElement: HTMLDivElement;
+  private controlsElement: HTMLDivElement;
+  private screenshareBtn: HTMLButtonElement;
+
+  constructor() {
+    this.container = document.createElement("div");
+    this.container.style.position = "fixed";
+    this.container.style.top = "20px";
+    this.container.style.left = "20px";
+    this.container.style.zIndex = "1000";
+    this.container.style.fontFamily = "Arial, sans-serif";
+    this.container.style.color = "white";
+    this.container.style.backgroundColor = "rgba(0, 0, 0, 0.7)";
+    this.container.style.padding = "15px";
+    this.container.style.borderRadius = "10px";
+    this.container.style.backdropFilter = "blur(10px)";
+    this.container.style.maxWidth = "300px";
+
+    this.statusElement = document.createElement("div");
+    this.statusElement.innerHTML = `
+            <h2 style="margin: 0 0 10px 0;">QuantumSynth Neural Edition</h2>
+            <div id="status">Ready to start screen sharing</div>
+            <div id="connection">Status: Waiting for user action</div>
+            <div id="fps">FPS: 0</div>
+            <div style="margin-top: 10px; font-size: 12px; color: #ccc;">
+                <p>For best results:</p>
+                <ul style="margin: 5px 0; padding-left: 15px;">
+                    <li>Share your entire screen</li>
+                    <li>Enable "Share audio" option</li>
+                    <li>Use Chrome or Edge for best compatibility</li>
+                </ul>
+            </div>
+        `;
+
+    this.controlsElement = document.createElement("div");
+    this.controlsElement.style.marginTop = "15px";
+    this.controlsElement.innerHTML = `
+            <button id="screenshareBtn" style="padding: 10px 16px; margin-right: 10px; background: #4ecdc4; border: none; border-radius: 5px; color: white; cursor: pointer; font-weight: bold;">
+                Start Screen Sharing
+            </button>
+            <button id="demoBtn" style="padding: 8px 16px; background: #ff6b6b; border: none; border-radius: 5px; color: white; cursor: pointer;">
+                Demo Mode
+            </button>
+        `;
+
+    this.container.appendChild(this.statusElement);
+    this.container.appendChild(this.controlsElement);
+    document.body.appendChild(this.container);
+
+    this.screenshareBtn = document.getElementById(
+      "screenshareBtn",
+    ) as HTMLButtonElement;
+    this.setupEventListeners();
+  }
+
+  private setupEventListeners() {
+    this.screenshareBtn.addEventListener("click", () => {
+      window.dispatchEvent(new CustomEvent("startScreenshare"));
+    });
+
+    document.getElementById("demoBtn")?.addEventListener("click", () => {
+      window.dispatchEvent(new CustomEvent("demoMode"));
+    });
+  }
+
+  updateStatus(status: string) {
+    const statusEl = document.getElementById("status");
+    if (statusEl) statusEl.textContent = status;
+  }
+
+  updateConnectionStatus(connected: boolean, message?: string) {
+    const connectionEl = document.getElementById("connection");
+    if (connectionEl) {
+      connectionEl.textContent =
+        message || `Status: ${connected ? "Connected" : "Disconnected"}`;
+    }
+  }
+
+  updateFPS(fps: number) {
+    const fpsEl = document.getElementById("fps");
+    if (fpsEl) fpsEl.textContent = `FPS: ${fps.toFixed(1)}`;
+  }
+
+  showNotification(message: string, duration: number = 3000) {
+    const notification = document.createElement("div");
+    notification.textContent = message;
+    notification.style.position = "fixed";
+    notification.style.top = "80px";
+    notification.style.left = "50%";
+    notification.style.transform = "translateX(-50%)";
+    notification.style.backgroundColor = "rgba(0, 0, 0, 0.8)";
+    notification.style.color = "white";
+    notification.style.padding = "10px 20px";
+    notification.style.borderRadius = "5px";
+    notification.style.zIndex = "1001";
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+      document.body.removeChild(notification);
+    }, duration);
+  }
+
+  setScreenshareButtonEnabled(enabled: boolean) {
+    this.screenshareBtn.disabled = !enabled;
+    this.screenshareBtn.style.opacity = enabled ? "1" : "0.5";
+    this.screenshareBtn.textContent = enabled
+      ? "Start Screen Sharing"
+      : "Sharing...";
+  }
+}
+</file>
+
+<file path="src/visualizer.ts">
+type GL = WebGLRenderingContext | WebGL2RenderingContext;
+type VizOpts = {
+  onStatus?: (s: string) => void;
+  onFps?: (fps: number) => void;
+};
+
+type ServerTexture = {
+  name: string;
+  dataUrl: string;
+  width: number;
+  height: number;
+  gridCols?: number;
+  gridRows?: number;
+  frames?: number;
+  fps?: number;
+};
+type ServerShader = {
+  type: string;
+  name: string;
+  code: string;
+  complexity: number;
+  version?: string;
+  uniforms?: { name: string; type: string }[];
+  textures?: ServerTexture[];
+};
+
+const VS = `
+attribute vec2 aPos; varying vec2 vUV;
+void main(){ vUV = aPos*0.5 + 0.5; gl_Position = vec4(aPos,0.0,1.0); }
+`;
+
+function compile(gl: GL, type: number, src: string) {
+  const s = gl.createShader(type)!;
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s) || "compile");
+  return s;
+}
+function link(gl: GL, vsSrc: string, fsSrc: string) {
+  const p = gl.createProgram()!;
+  gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+    throw new Error(gl.getProgramInfoLog(p) || "link");
+  return p;
+}
+
+const PRELUDE = `
+precision highp float;
+varying vec2 vUV; uniform vec2 uRes;
+float sat(float x){ return clamp(x,0.0,1.0); }
+vec2  toAspect(vec2 uv){ vec2 p=uv*2.0-1.0; p.x *= uRes.x/max(1.0,uRes.y); return p; }
+float vignette(vec2 uv){ return 1.0; }
+vec3  pal(float t, vec3 a, vec3 b, vec3 c, vec3 d){ return a + b*cos(6.28318*(c*t+d)); }
+vec3  nicePal(float t){ return pal(t, vec3(0.5,0.53,0.56), vec3(0.45,0.43,0.48), vec3(1.0,1.0,1.0), vec3(0.0,0.33,0.67)); }
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }
+vec2  rot(vec2 p, float a){ float c=cos(a), s=sin(a); return mat2(c,-s,s,c)*p; }
+`;
+
+const NOISE = `
+float n2(vec2 p){
+  vec2 i=floor(p), f=fract(p);
+  float a=hash(i);
+  float b=hash(i+vec2(1.0,0.0));
+  float c=hash(i+vec2(0.0,1.0));
+  float d=hash(i+vec2(1.0,1.0));
+  vec2 u=f*f*(3.0-2.0*f);
+  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+}
+float fbm(vec2 p){
+  float v=0.0, a=0.5;
+  for(int i=0;i<5;i++){
+    v += a*n2(p); p = p*2.02 + vec2(37.1,17.7); a*=0.5;
+  }
+  return v;
+}
+`;
+
+const AUDIO_UNI = `
+uniform float uTime,uLevel,uBeat,uImpact,uLow,uMid,uAir;
+uniform sampler2D uSpecTex; uniform float uSpecN;
+uniform sampler2D uWaveTex; uniform float uWaveN;
+float specAt(float x){
+  float xx=sat(x); float i=floor(xx*uSpecN); float u=(i+0.5)/uSpecN;
+  return texture2D(uSpecTex, vec2(u,0.5)).r;
+}
+float waveAt(float x){
+  float xx=sat(x); float i=floor(xx*uWaveN); float u=(i+0.5)/uWaveN;
+  return texture2D(uWaveTex, vec2(u,0.5)).r;
+}
+`;
+
+const FS_BASS_BLOOM = `
+${PRELUDE}${NOISE}${AUDIO_UNI}
+float softRing(float r, float radius, float width){
+  return smoothstep(width, 0.0, abs(r - radius));
+}
+void main(){
+  vec2 uv = vUV;
+  vec2 p = toAspect(uv);
+  float t = uTime;
+  float r = length(p) + 1e-4;
+  float ang = atan(p.y, p.x);
+  float bass = uLow;
+  float treble = uAir;
+  float specRad = specAt(sat(r));
+  float specAng = specAt(fract((ang + 3.14159) / 6.28318));
+  float waveLine = waveAt(fract(0.5 * (ang / 3.14159 + 1.0) + t * 0.05));
+  vec2 warp = p;
+  warp += 0.25 * vec2(
+    fbm(p * 2.5 + vec2(0.0, t * 0.7)),
+    fbm(p * 2.3 + vec2(t * 0.6, 0.0))
+  ) * (0.6 + 1.3 * bass);
+  float bloomRadius = 0.25 + 0.35 * bass + 0.12 * uImpact + 0.08 * waveLine;
+  float bloom = softRing(r, bloomRadius, 0.12 - 0.04 * uImpact);
+  float inner = exp(-pow(r / (0.32 + 0.18 * bass), 2.2));
+  float ripples = 0.0;
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i);
+    ripples += softRing(
+      r,
+      bloomRadius + fi * 0.07 + 0.02 * waveLine,
+      0.05 + 0.015 * uMid
+    );
+  }
+  ripples *= 0.18 + 1.6 * uBeat + 0.9 * uImpact;
+  float streaks = sin(ang * 10.0 + t * 4.0 + bass * 6.0) * (0.5 + 1.0 * treble);
+  vec3 base = nicePal(0.32 + 0.25 * specAng + 0.2 * treble);
+  vec3 glow = vec3(0.18, 0.9, 1.1) * (0.4 + 2.1 * bass + 1.1 * uImpact);
+  vec3 ink = mix(vec3(0.05, 0.1, 0.2), vec3(0.08, 0.12, 0.25), r);
+  vec3 col = ink;
+  col += base * (inner * (0.6 + 2.3 * uLevel) + streaks * 0.12);
+  col += glow * (bloom * (0.8 + 1.7 * specRad) + ripples);
+  col *= vignette(uv);
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+const FS_SPECTRUM_CASCADE = `
+${PRELUDE}${AUDIO_UNI}
+void main(){
+  vec2 uv = vUV;
+  float t = uTime;
+  float x = uv.x;
+  float spec = specAt(pow(x, 0.55));
+  float specMirror = specAt(pow(1.0 - x, 0.7));
+  float energy = 0.35 + 2.0 * uLevel + 0.8 * uImpact;
+  float barHeight = 0.08 + 2.4 * spec + 1.0 * uLow + 0.6 * uMid;
+  float thickness = 0.025 + 0.04 * uImpact;
+  float body = step(uv.y, barHeight);
+  float topFade = 1.0 - smoothstep(max(0.0, barHeight - thickness), barHeight, uv.y);
+  float glow = smoothstep(
+    max(0.0, barHeight - 0.02 - 0.04 * uAir),
+    barHeight,
+    uv.y
+  ) * body;
+  float scan = sin((x * 70.0 - t * 9.0) * (1.0 + uAir * 0.6));
+  vec3 backdrop = mix(vec3(0.03, 0.04, 0.07), vec3(0.08, 0.09, 0.13), uv.y);
+  vec3 core = mix(vec3(0.18, 0.8, 1.1), vec3(1.0, 0.55, 0.9), x);
+  vec3 tip = mix(vec3(0.2, 0.9, 1.2), vec3(1.0, 0.8, 0.6), specMirror);
+  vec3 col = backdrop;
+  col += core * body * topFade * energy;
+  col += tip * glow * (0.4 + 2.2 * uAir + 1.0 * uBeat);
+  col += vec3(0.05, 0.08, 0.12) * max(0.0, scan) * body * 0.35;
+  float floorGlow = smoothstep(0.0, 0.06 + 0.1 * uImpact, barHeight - uv.y);
+  col += vec3(0.1, 0.2, 0.3) * floorGlow * (0.15 + 1.1 * uLow);
+  col *= vignette(uv);
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+const FS_WAVE_TUNNEL = `
+${PRELUDE}${NOISE}${AUDIO_UNI}
+void main(){
+  vec2 uv = vUV;
+  vec2 p = toAspect(uv);
+  float t = uTime * 0.6;
+  float radius = length(p) + 1e-4;
+  float angle = atan(p.y, p.x);
+  float travel = t + 0.2 * uLow;
+  float wave = waveAt(fract(0.5 * (angle / 3.14159 + 1.0) + travel * 0.1));
+  float spec = specAt(fract(radius));
+  vec2 swirl = vec2(
+    fbm(vec2(angle * 2.7, radius * 3.4) + vec2(0.0, travel * 1.3)),
+    fbm(vec2(angle * 2.2, radius * 3.1) + vec2(travel * 1.1, 0.0))
+  );
+  float depth = exp(-radius * (2.5 + 4.0 * uLevel));
+  float bands = sin((radius * 25.0 - travel * 10.0) + wave * 6.0);
+  float bandGlow = smoothstep(0.0, 1.0, 0.55 + 0.45 * bands);
+  vec3 tint = nicePal(0.35 + 0.25 * wave + 0.2 * uAir);
+  vec3 aura = mix(vec3(0.1, 0.4, 1.0), vec3(1.0, 0.6, 0.3), spec);
+  vec3 col = tint * (depth * (0.6 + 2.0 * uLow) + bandGlow * 0.2);
+  col += aura * (0.3 + 1.8 * uBeat + 0.8 * uImpact) * depth;
+  col += vec3(0.06, 0.12, 0.2) * fbm(p * 3.0 + swirl * 1.8) * (0.4 + 1.0 * uMid);
+  col *= vignette(uv);
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+const FS_PARTICLE_STORM = `
+${PRELUDE}${AUDIO_UNI}
+float hash1(float n){ return fract(sin(n) * 43758.5453); }
+float softDisc(vec2 p, vec2 center, float radius, float blur){
+  return smoothstep(radius + blur, radius, length(p - center));
+}
+void main(){
+  vec2 uv = vUV;
+  vec2 p = toAspect(uv);
+  float t = uTime;
+  float bass = uLow;
+  float treble = uAir;
+  vec3 col = vec3(0.0);
+  float energy = 0.4 + 1.8 * uLevel + 1.0 * uImpact;
+  for (int i = 0; i < 60; i++) {
+    float fi = float(i);
+    float seed = fi * 17.13;
+    float orbit = mix(0.25, 1.2, hash1(seed));
+    float speed = mix(0.4, 1.6, hash1(seed + 2.3)) * (1.0 + treble * 0.7);
+    float offset = hash1(seed + 5.7) * 6.28318;
+    vec2 center = vec2(cos(offset + t * speed), sin(offset + t * speed));
+    center *= orbit;
+    center += 0.22 * vec2(sin(t * 0.8 + seed), cos(t * 0.6 + seed * 0.9)) * bass;
+    float size = mix(0.015, 0.08, hash1(seed + 11.1)) * (1.0 + bass * 1.4 + uImpact * 0.8);
+    float blur = size * (0.7 + 0.5 * treble);
+    float m = softDisc(p, center, size, blur);
+    float flicker = 0.4 + 0.6 * sin(t * 6.0 + seed + uBeat * 5.0);
+    vec3 tint = mix(vec3(0.15, 0.8, 1.1), vec3(1.0, 0.5, 0.9), hash1(seed + 7.4));
+    col += tint * m * energy * flicker;
+  }
+  float haze = exp(-dot(p, p) * (1.2 + 2.0 * bass));
+  col += vec3(0.05, 0.09, 0.16) * haze * (0.4 + 1.3 * treble);
+  col *= vignette(uv);
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+const FS_CHROMA_CURRENT = `
+${PRELUDE}${NOISE}${AUDIO_UNI}
+void main(){
+  vec2 uv = vUV;
+  vec2 p = toAspect(uv) * 1.2;
+  float t = uTime * 0.7;
+  vec2 flow = vec2(
+    fbm(p * 2.0 + vec2(0.0, t * 1.1)),
+    fbm(p * 2.2 + vec2(t * 0.9, 0.0))
+  );
+  float swirl = sin(p.x * 5.5 + p.y * 4.5 + t * 3.0 + uBeat * 5.0);
+  float spec = specAt(fract(uv.x + swirl * 0.05));
+  float band = waveAt(fract(uv.y + t * 0.12));
+  float weave = fbm(p * 3.3 + flow * 1.7);
+  float energy = 0.25 + 2.0 * uMid + 0.9 * uAir + 0.6 * uImpact;
+  vec3 base = nicePal(0.25 + 0.35 * weave + 0.2 * band + 0.1 * uLow);
+  vec3 highlight = mix(vec3(0.12, 0.5, 1.1), vec3(1.0, 0.45, 0.8), spec);
+  vec3 col = base * (0.4 + 1.6 * energy);
+  col += highlight * abs(swirl) * (0.25 + 1.4 * uAir + 0.9 * uBeat);
+  col += vec3(0.08, 0.12, 0.2) * weave * (0.3 + 1.1 * uLevel);
+  col *= vignette(uv);
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+const FS_MORPH = `
+${PRELUDE}
+uniform sampler2D uFrom, uTo;
+uniform float uProgress, uBeat, uImpact;
+uniform vec3 uBands;
+float luma(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }
+vec2 sobel(sampler2D t, vec2 uv, vec2 px){
+  float tl=luma(texture2D(t, uv+px*vec2(-1.0,-1.0)).rgb);
+  float  l=luma(texture2D(t, uv+px*vec2(-1.0, 0.0)).rgb);
+  float bl=luma(texture2D(t, uv+px*vec2(-1.0, 1.0)).rgb);
+  float tr=luma(texture2D(t, uv+px*vec2( 1.0,-1.0)).rgb);
+  float  r=luma(texture2D(t, uv+px*vec2( 1.0, 0.0)).rgb);
+  float br=luma(texture2D(t, uv+px*vec2( 1.0, 1.0)).rgb);
+  float  t0=luma(texture2D(t, uv+px*vec2( 0.0,-1.0)).rgb);
+  float  b0=luma(texture2D(t, uv+px*vec2( 0.0, 1.0)).rgb);
+  vec2 g;
+  g.x = (tr + 2.0*r + br) - (tl + 2.0*l + bl);
+  g.y = (bl + 2.0*b0 + br) - (tl + 2.0*t0 + tr);
+  return g;
+}
+vec2 norm2(vec2 v){ float m=max(1e-5, length(v)); return v/m; }
+void main(){
+  vec2 uv=vUV; vec2 px=1.0/uRes;
+  float p = smoothstep(0.0,1.0,uProgress);
+  vec2 gA = sobel(uFrom, uv, px);
+  vec2 gB = sobel(uTo,   uv, px);
+  vec2 dirA = norm2(gA);
+  vec2 dirB = norm2(gB);
+  float magA = min(1.0, length(gA));
+  float magB = min(1.0, length(gB));
+  float featA = smoothstep(0.12, 0.55, magA);
+  float featB = smoothstep(0.12, 0.55, magB);
+  float audioAmp = 0.35 + 2.2*uBands.x + 1.2*uImpact + 0.6*uBeat + 0.7*uBands.z;
+  vec2 ua = uv, ub = uv;
+  float stepLen = (1.0 + 1.6*uBands.y) * (0.004 + 0.006*audioAmp);
+  for(int i=0;i<7;i++){ ua += dirA * stepLen * (1.0-p) * featA; ub -= dirB * stepLen * (p) * featB; }
+  vec3 colA = texture2D(uFrom, ua).rgb;
+  vec3 colB = texture2D(uTo,   ub).rgb;
+  float carryA = featA * (1.0 - p);
+  float carryB = featB * p;
+  float w = smoothstep(0.0,1.0, p + 0.25*(carryB - carryA)) + 0.18*uBeat;
+  w = clamp(w, 0.0, 1.0);
+  vec3 glow = vec3(0.06,0.04,0.10) * (uBeat*0.7 + uImpact*0.35);
+  vec3 col = mix(colA, colB, w) + glow;
+  gl_FragColor = vec4(col,1.0);
+}
+`;
+
+const MIN_MODE_HOLD_MS = 15000;
+const MODE_JITTER_MS = 16000;
+
+export class Visualizer {
+  private canvas: HTMLCanvasElement;
+  private gl: GL | null = null;
+
+  private quad: WebGLBuffer | null = null;
+
+  private audioCtx: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private freq: Uint8Array | null = null;
+  private wave: Uint8Array | null = null;
+  private stream: MediaStream | null = null;
+
+  private level = 0;
+  private beat = 0;
+  private impact = 0;
+  private low = 0;
+  private mid = 0;
+  private air = 0;
+  private agc = 0.7;
+
+  private specTex: WebGLTexture | null = null;
+  private waveTex: WebGLTexture | null = null;
+  private specBins = 192;
+  private waveBins = 512;
+
+  private serverProg: WebGLProgram | null = null;
+
+  private progs: Record<string, WebGLProgram | null> = {};
+  private morphProg: WebGLProgram | null = null;
+
+  private texFrom: WebGLTexture | null = null;
+  private fbFrom: WebGLFramebuffer | null = null;
+  private texTo: WebGLTexture | null = null;
+  private fbTo: WebGLFramebuffer | null = null;
+
+  private scenes = [
+    "bassBloom",
+    "spectrumCascade",
+    "waveTunnel",
+    "particleStorm",
+    "chromaCurrent",
+  ] as const;
+  private sceneIdx = 0;
+  private nextSwitchAt = 0;
+  private rotatePaused = false;
+
+  private transitioning = false;
+  private transStart = 0;
+  private transDur = 1600;
+  private nextIdx = 0;
+
+  private anim: number | undefined;
+  private frames = 0;
+  private lastFPS = performance.now();
+
+  constructor(
+    canvas: HTMLCanvasElement,
+    private opts: VizOpts = {},
+  ) {
+    this.canvas = canvas;
+    this.gl =
+      (canvas.getContext("webgl") as GL) || (canvas.getContext("webgl2") as GL);
+    if (!this.gl) {
+      this.canvas.getContext("2d")?.fillText("WebGL not supported", 10, 20);
+      return;
+    }
+
+    this.initGL();
+    this.initAudioTextures();
+    this.resize();
+    new ResizeObserver(() => this.resize()).observe(
+      this.canvas.parentElement || document.body,
+    );
+
+    this.opts.onStatus?.(
+      "Ready. M next • 1–0 choose • P pause • S server (one-off)",
+    );
+    window.addEventListener("keydown", (e) => this.onKey(e));
+  }
+
+  isPaused() {
+    return this.rotatePaused;
+  }
+  togglePause() {
+    this.rotatePaused = !this.rotatePaused;
+    if (!this.anim) this.loop();
+  }
+
+  async start() {
+    this.loop();
+    this.loadServerShader().catch(() => {});
+  }
+  stop() {
+    if (this.anim) cancelAnimationFrame(this.anim);
+  }
+
+  async startScreenShare() {
+    const s = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: { echoCancellation: false, noiseSuppression: false },
+    } as any);
+    if (!s.getAudioTracks().length) {
+      s.getTracks().forEach((t) => t.stop());
+      throw new Error("No audio shared");
+    }
+    this.audioCtx?.close().catch(() => {});
+    this.audioCtx = new (window.AudioContext ||
+      (window as any).webkitAudioContext)();
+    this.analyser = this.audioCtx.createAnalyser();
+    this.analyser.fftSize = 4096;
+    const src = this.audioCtx.createMediaStreamSource(s);
+    src.connect(this.analyser);
+    this.freq = new Uint8Array(this.analyser.frequencyBinCount);
+    this.wave = new Uint8Array(this.analyser.fftSize);
+    this.stream = s;
+    const v = s.getVideoTracks()[0];
+    if (v) v.onended = () => this.stopScreenShare();
+  }
+  stopScreenShare() {
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = null;
+    this.freq = null;
+    this.wave = null;
+    this.audioCtx?.close().catch(() => {});
+    this.audioCtx = null;
+    this.analyser = null;
+  }
+  isSharing() {
+    return !!this.stream;
+  }
+  setDemoMode(v: boolean) {
+    if (v) this.stopScreenShare();
+  }
+
+  private initGL() {
+    const gl = this.gl!;
+    const quad = gl.createBuffer()!;
+    this.quad = quad;
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1]),
+      gl.STATIC_DRAW,
+    );
+
+    const sources: Record<string, string> = {
+      bassBloom: FS_BASS_BLOOM,
+      spectrumCascade: FS_SPECTRUM_CASCADE,
+      waveTunnel: FS_WAVE_TUNNEL,
+      particleStorm: FS_PARTICLE_STORM,
+      chromaCurrent: FS_CHROMA_CURRENT,
+    };
+    for (const [k, src] of Object.entries(sources)) {
+      try {
+        const p = link(gl, VS, src);
+        this.progs[k] = p;
+      } catch (e) {
+        console.error("[Shader fail]", k, e);
+        this.progs[k] = null;
+      }
+    }
+    this.morphProg = link(gl, VS, FS_MORPH);
+
+    this.texFrom = this.mkTex(2, 2);
+    this.fbFrom = this.mkFB(this.texFrom!);
+    this.texTo = this.mkTex(2, 2);
+    this.fbTo = this.mkFB(this.texTo!);
+
+    this.bumpSwitchTimer();
+  }
+
+  private mkTex(w: number, h: number) {
+    const gl = this.gl!;
+    const t = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      w,
+      h,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  private mkFB(t: WebGLTexture) {
+    const gl = this.gl!;
+    const f = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      t,
+      0,
+    );
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return f;
+  }
+
+  private initAudioTextures() {
+    const gl = this.gl!;
+    const mk = (w: number) => {
+      const t = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        w,
+        1,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        null,
+      );
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      return t;
+    };
+    this.specTex = mk(this.specBins);
+    this.waveTex = mk(this.waveBins);
+  }
+
+  private resize() {
+    const gl = this.gl!;
+    const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+    const container = this.canvas.parentElement || document.body;
+    const w = (container as HTMLElement).clientWidth || window.innerWidth;
+    const h = (container as HTMLElement).clientHeight || window.innerHeight;
+    const W = w * dpr,
+      H = h * dpr;
+    if (this.canvas.width !== W || this.canvas.height !== H) {
+      this.canvas.width = W;
+      this.canvas.height = H;
+      this.canvas.style.width = w + "px";
+      this.canvas.style.height = h + "px";
+      gl.viewport(0, 0, W, H);
+
+      const hw = Math.max(2, Math.floor(W / 2)),
+        hh = Math.max(2, Math.floor(H / 2));
+      const upd = (t: WebGLTexture | null, f: WebGLFramebuffer | null) => {
+        if (!t || !f) return;
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          hw,
+          hh,
+          0,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          null,
+        );
+        gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+        gl.framebufferTexture2D(
+          gl.FRAMEBUFFER,
+          gl.COLOR_ATTACHMENT0,
+          gl.TEXTURE_2D,
+          t,
+          0,
+        );
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      };
+      upd(this.texFrom, this.fbFrom);
+      upd(this.texTo, this.fbTo);
+    }
+  }
+
+  private onKey(e: KeyboardEvent) {
+    const k = e.key.toLowerCase();
+    if (k === "m") this.nextScene();
+    if (k === "p") this.togglePause();
+    if (k === "s") this.previewServer();
+    if ("0123456789".includes(k)) {
+      const map = [...this.scenes];
+      const idx = k === "0" ? map.length - 1 : parseInt(k, 10) - 1;
+      if (map[idx]) this.beginTransition(idx);
+    }
+  }
+
+  private bumpSwitchTimer() {
+    const now = performance.now();
+    this.nextSwitchAt = now + MIN_MODE_HOLD_MS + Math.random() * MODE_JITTER_MS;
+  }
+  private nextScene() {
+    const idx = (this.sceneIdx + 1) % this.scenes.length;
+    this.beginTransition(idx);
+  }
+  private beginTransition(next: number) {
+    if (next === this.sceneIdx) return;
+    this.nextIdx = next;
+
+    const now = performance.now() / 1000;
+    this.renderSceneTo(
+      this.texFrom!,
+      this.fbFrom!,
+      now,
+      this.scenes[this.sceneIdx] as string,
+    );
+    this.renderSceneTo(
+      this.texTo!,
+      this.fbTo!,
+      now,
+      this.scenes[next] as string,
+    );
+    this.transitioning = true;
+    this.transStart = performance.now();
+    this.bumpSwitchTimer();
+  }
+
+  private loop = () => {
+    const gl = this.gl!;
+    const now = performance.now();
+    this.frames++;
+    if (now - this.lastFPS >= 1000) {
+      this.opts.onFps?.(this.frames);
+      this.frames = 0;
+      this.lastFPS = now;
+    }
+
+    if (this.analyser && this.freq && this.wave) {
+      this.analyser.getByteFrequencyData(this.freq);
+      this.analyser.getByteTimeDomainData(this.wave);
+      const N = this.freq.length;
+      let sum = 0;
+      let low = 0,
+        mid = 0,
+        air = 0;
+      for (let i = 0; i < N; i++) {
+        const v = this.freq[i] / 255;
+        sum += v * v;
+        if (i < N * 0.2) low += v;
+        else if (i < N * 0.7) mid += v;
+        else air += v;
+      }
+      low /= Math.max(1, N * 0.2);
+      mid /= Math.max(1, N * 0.5);
+      air /= Math.max(1, N * 0.3);
+      const rawLevel = Math.sqrt(sum / N);
+      const target = 0.6;
+      const e = target - rawLevel;
+      this.agc += e * 0.1;
+      this.agc = Math.max(0.35, Math.min(2.6, this.agc));
+      const level = Math.min(1, rawLevel * this.agc * 2.75);
+      this.low = low;
+      this.mid = mid;
+      this.air = air;
+      this.level = level;
+      this.impact = Math.max(0, low * 1.7 + mid * 1.0 + air * 0.55 - 0.48);
+      this.beat = (low > 0.5 ? 0.7 : 0.0) + (mid > 0.65 ? 0.25 : 0.0);
+
+      const sBins = this.specBins,
+        tmp = new Uint8Array(sBins * 4);
+      const M = this.wave.length;
+      for (let i = 0; i < sBins; i++) {
+        const src = Math.floor((i * N) / sBins);
+        const v = this.freq[src];
+        tmp[i * 4] = tmp[i * 4 + 1] = tmp[i * 4 + 2] = v;
+        tmp[i * 4 + 3] = 255;
+      }
+      gl.activeTexture(gl.TEXTURE0 + 6);
+      gl.bindTexture(gl.TEXTURE_2D, this.specTex!);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        sBins,
+        1,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        tmp,
+      );
+      const wBins = this.waveBins,
+        tmp2 = new Uint8Array(wBins * 4);
+      for (let i = 0; i < wBins; i++) {
+        const idx = Math.floor((i * M) / wBins);
+        const v = this.wave[idx];
+        tmp2[i * 4] = tmp2[i * 4 + 1] = tmp2[i * 4 + 2] = v;
+        tmp2[i * 4 + 3] = 255;
+      }
+      gl.activeTexture(gl.TEXTURE0 + 8);
+      gl.bindTexture(gl.TEXTURE_2D, this.waveTex!);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        wBins,
+        1,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        tmp2,
+      );
+    }
+
+    if (!this.rotatePaused && !this.transitioning && now >= this.nextSwitchAt)
+      this.nextScene();
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+
+    const t = now / 1000;
+
+    if (this.transitioning) {
+      this.renderMorph();
+    } else if (this.sceneIdx === (9999 as any)) {
+      this.drawServer(t);
+    } else {
+      const name = this.scenes[this.sceneIdx] as string;
+      this.drawScene(name, t);
+    }
+
+    this.anim = requestAnimationFrame(this.loop);
+  };
+
+  private renderSceneTo(
+    tex: WebGLTexture,
+    fb: WebGLFramebuffer,
+    now: number,
+    kind: string,
+  ) {
+    const gl = this.gl!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    const w = Math.max(2, Math.floor(this.canvas.width / 2)),
+      h = Math.max(2, Math.floor(this.canvas.height / 2));
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const p = this.progs[kind];
+    if (!p) return;
+    gl.useProgram(p);
+    const set = (n: string, v: any, kind: "1f" | "2f" | "1i") => {
+      const u = gl.getUniformLocation(p, n);
+      if (!u) return;
+      (gl as any)[`uniform${kind}`](u, ...(Array.isArray(v) ? v : [v]));
+    };
+    gl.activeTexture(gl.TEXTURE0 + 6);
+    gl.bindTexture(gl.TEXTURE_2D, this.specTex!);
+    set("uSpecTex", 6, "1i");
+    set("uSpecN", this.specBins, "1f");
+    gl.activeTexture(gl.TEXTURE0 + 8);
+    gl.bindTexture(gl.TEXTURE_2D, this.waveTex!);
+    set("uWaveTex", 8, "1i");
+    set("uWaveN", this.waveBins, "1f");
+    set("uTime", now, "1f");
+    set("uRes", [this.canvas.width, this.canvas.height], "2f");
+    set("uLevel", this.level, "1f");
+    set("uBeat", this.beat, "1f");
+    set("uImpact", this.impact, "1f");
+    set("uLow", this.low, "1f");
+    set("uMid", this.mid, "1f");
+    set("uAir", this.air, "1f");
+    const loc = gl.getAttribLocation(p, "aPos");
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quad!);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  private renderMorph() {
+    const gl = this.gl!;
+    if (!this.morphProg) {
+      this.transitioning = false;
+      this.sceneIdx = this.nextIdx;
+      return;
+    }
+    const p = Math.min(
+      1,
+      (performance.now() - this.transStart) / this.transDur,
+    );
+    gl.useProgram(this.morphProg);
+    const u = (n: string) => gl.getUniformLocation(this.morphProg!, n);
+    gl.activeTexture(gl.TEXTURE0 + 0);
+    gl.bindTexture(gl.TEXTURE_2D, this.texFrom!);
+    gl.uniform1i(u("uFrom")!, 0);
+    gl.activeTexture(gl.TEXTURE0 + 1);
+    gl.bindTexture(gl.TEXTURE_2D, this.texTo!);
+    gl.uniform1i(u("uTo")!, 1);
+    gl.uniform1f(u("uProgress")!, p);
+    gl.uniform2f(u("uRes")!, this.canvas.width, this.canvas.height);
+    gl.uniform1f(u("uBeat")!, this.beat);
+    gl.uniform3f(u("uBands")!, this.low, this.mid, this.air);
+    gl.uniform1f(u("uImpact")!, Math.min(2.0, this.impact));
+    const a = gl.getAttribLocation(this.morphProg!, "aPos");
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quad!);
+    gl.enableVertexAttribArray(a);
+    gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    if (p >= 1) {
+      this.transitioning = false;
+      this.sceneIdx = this.nextIdx;
+    }
+  }
+
+  private drawScene(which: string, t: number) {
+    const gl = this.gl!;
+    const p = this.progs[which];
+    if (!p) return;
+    gl.useProgram(p);
+    const set = (n: string, v: any, kind: "1f" | "2f" | "1i") => {
+      const u = gl.getUniformLocation(p, n);
+      if (!u) return;
+      (gl as any)[`uniform${kind}`](u, ...(Array.isArray(v) ? v : [v]));
+    };
+    gl.activeTexture(gl.TEXTURE0 + 6);
+    gl.bindTexture(gl.TEXTURE_2D, this.specTex!);
+    set("uSpecTex", 6, "1i");
+    set("uSpecN", this.specBins, "1f");
+    gl.activeTexture(gl.TEXTURE0 + 8);
+    gl.bindTexture(gl.TEXTURE_2D, this.waveTex!);
+    set("uWaveTex", 8, "1i");
+    set("uWaveN", this.waveBins, "1f");
+    set("uTime", t, "1f");
+    set("uRes", [this.canvas.width, this.canvas.height], "2f");
+    set("uLevel", this.level, "1f");
+    set("uBeat", this.beat, "1f");
+    set("uImpact", this.impact, "1f");
+    set("uLow", this.low, "1f");
+    set("uMid", this.mid, "1f");
+    set("uAir", this.air, "1f");
+    const loc = gl.getAttribLocation(p, "aPos");
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quad!);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  private async loadServerShader() {
+    try {
+      const url = `/api/shader/next?ts=${Date.now()}`;
+      const r = await fetch(url, { cache: "no-store" });
+      if (!r.ok) return;
+      const s = (await r.json()) as ServerShader;
+      const gl = this.gl!;
+      this.serverProg = link(gl, VS, s.code);
+    } catch (err) {
+      console.warn("[ServerShader]", err);
+    }
+  }
+  private previewServer() {
+    if (this.serverProg) {
+      this.sceneIdx = 9999 as any;
+      this.opts.onStatus?.("Server shader preview (press M or 1–0 to return)");
+    } else {
+      this.opts.onStatus?.("No server shader available");
+    }
+  }
+  private drawServer(t: number) {
+    const gl = this.gl!;
+    const p = this.serverProg;
+    if (!p) {
+      this.drawScene("bassBloom", t);
+      return;
+    }
+    gl.useProgram(p);
+    const set = (n: string, v: any, kind: "1f" | "2f" | "1i") => {
+      const u = gl.getUniformLocation(p, n);
+      if (!u) return;
+      (gl as any)[`uniform${kind}`](u, ...(Array.isArray(v) ? v : [v]));
+    };
+    set("uTime", t, "1f");
+    set("uRes", [this.canvas.width, this.canvas.height], "2f");
+    set("uLevel", this.level, "1f");
+    set("uBeat", this.beat, "1f");
+    set("uImpact", this.impact, "1f");
+    set("uLow", this.low, "1f");
+    set("uMid", this.mid, "1f");
+    set("uAir", this.air, "1f");
+    const loc = gl.getAttribLocation(p, "aPos");
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quad!);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+}
+</file>
+
+<file path="src/webgl-renderer.ts">
+export class WebGLRenderer {
+  private gl: WebGL2RenderingContext;
+  private program: WebGLProgram | null = null;
+
+  constructor(private canvas: HTMLCanvasElement) {
+    this.gl = canvas.getContext("webgl2")!;
+  }
+
+  initShaders(vertexShaderSource: string, fragmentShaderSource: string) {
+    const gl = this.gl;
+    const vertexShader = this.compileShader(
+      gl.VERTEX_SHADER,
+      vertexShaderSource,
+    );
+    const fragmentShader = this.compileShader(
+      gl.FRAGMENT_SHADER,
+      fragmentShaderSource,
+    );
+
+    this.program = gl.createProgram()!;
+    gl.attachShader(this.program, vertexShader);
+    gl.attachShader(this.program, fragmentShader);
+    gl.linkProgram(this.program);
+    gl.useProgram(this.program);
+  }
+
+  setUniform1fv(name: string, data: number[]) {
+    const gl = this.gl;
+    const location = gl.getUniformLocation(this.program!, name);
+    gl.uniform1fv(location, new Float32Array(data));
+  }
+
+  render() {
+    const gl = this.gl;
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.drawArrays(gl.LINE_STRIP, 0, 256);
+  }
+
+  private compileShader(type: number, source: string): WebGLShader {
+    const gl = this.gl;
+    const shader = gl.createShader(type)!;
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      console.error("Shader compile error:", gl.getShaderInfoLog(shader));
+      gl.deleteShader(shader);
+      throw new Error("Shader compilation failed");
+    }
+    return shader;
+  }
+}
+</file>
+
+<file path="vite.config.ts">
+// frontend/vite.config.ts
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  server: {
+    host: true,         // expose on LAN
+    port: 5173,         // Vite default
+    proxy: {
+      "/api": "http://localhost:8080",
+      "/ws": { target: "http://localhost:8080", ws: true, changeOrigin: true },
+    },
+  },
+  build: { outDir: "dist" },
+});
+</file>
+
+</files>
