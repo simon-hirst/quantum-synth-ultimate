@@ -80,6 +80,128 @@ vite.config.ts
 <files>
 This section contains the contents of the repository's files.
 
+<file path="index.html">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Synth Ultimate</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: #000;
+            font-family: 'Arial', sans-serif;
+        }
+        canvas { 
+            display: block; 
+            width: 100vw;
+            height: 100vh;
+        }
+        .overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #0ff;
+            z-index: 100;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="overlay">
+        <h1>Quantum Synth Ultimate</h1>
+        <p>Share your screen and audio when prompted</p>
+    </div>
+    <canvas id="glCanvas"></canvas>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
+</file>
+
+<file path=".github/workflows/backend-deploy.yml">
+name: Deploy Backend to Azure Container Apps
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build Go application
+      run: |
+        cd backend/ai-processor
+        go mod download
+        CGO_ENABLED=0 GOOS=linux go build -o ai-processor .
+
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Build and push container image
+      uses: azure/container-apps-deploy-action@v1
+      with:
+        appSourcePath: ./backend/ai-processor
+        registryUrl: quantumsynthacr1757219498.azurecr.io
+        registryUsername: ${{ secrets.REGISTRY_USERNAME }}
+        registryPassword: ${{ secrets.REGISTRY_PASSWORD }}
+        containerAppName: quantum-ai-backend
+        resourceGroup: quantum-synth-rg
+        imageToBuild: quantumsynthacr1757219498.azurecr.io/ai-processor:${{ github.sha }}
+</file>
+
+<file path="azure-static-web-apps.config.json">
+{
+  "locations": [
+    {
+      "appBuildCommand": "npm run build",
+      "appBuildOutputDir": "dist",
+      "appDevserverUrl": "http://localhost:3000",
+      "appName": "quantum-synth-frontend",
+      "resourceGroup": "quantum-synth-rg"
+    }
+  ]
+}
+</file>
+
+<file path="frontend/package.json">
+{
+  "name": "quantum-synth-frontend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/three": "^0.158.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "three": "^0.158.0"
+  }
+}
+</file>
+
 <file path="frontend/repomix-output.xml">
 This file is a merged representation of the entire codebase, combined into a single document by Repomix.
 
@@ -2922,145 +3044,6 @@ export default defineConfig({
 </files>
 </file>
 
-<file path="frontend/vite.config.ts">
-// frontend/vite.config.ts
-import { defineConfig } from "vite";
-
-export default defineConfig({
-  server: {
-    host: true,         // expose on LAN
-    port: 5173,         // Vite default
-    proxy: {
-      "/api": "http://localhost:8080",
-      "/ws": { target: "http://localhost:8080", ws: true, changeOrigin: true },
-    },
-  },
-  build: { outDir: "dist" },
-});
-</file>
-
-<file path="index.html">
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum Synth Ultimate</title>
-    <style>
-        body { 
-            margin: 0; 
-            overflow: hidden; 
-            background: #000;
-            font-family: 'Arial', sans-serif;
-        }
-        canvas { 
-            display: block; 
-            width: 100vw;
-            height: 100vh;
-        }
-        .overlay {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: #0ff;
-            z-index: 100;
-            background: rgba(0,0,0,0.7);
-            padding: 10px;
-            border-radius: 5px;
-        }
-    </style>
-</head>
-<body>
-    <div class="overlay">
-        <h1>Quantum Synth Ultimate</h1>
-        <p>Share your screen and audio when prompted</p>
-    </div>
-    <canvas id="glCanvas"></canvas>
-    <script type="module" src="/src/main.ts"></script>
-</body>
-</html>
-</file>
-
-<file path=".github/workflows/backend-deploy.yml">
-name: Deploy Backend to Azure Container Apps
-
-on:
-  push:
-    branches: [ master ]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend-deploy.yml'
-
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.21'
-
-    - name: Build Go application
-      run: |
-        cd backend/ai-processor
-        go mod download
-        CGO_ENABLED=0 GOOS=linux go build -o ai-processor .
-
-    - name: Login to Azure
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-    - name: Build and push container image
-      uses: azure/container-apps-deploy-action@v1
-      with:
-        appSourcePath: ./backend/ai-processor
-        registryUrl: quantumsynthacr1757219498.azurecr.io
-        registryUsername: ${{ secrets.REGISTRY_USERNAME }}
-        registryPassword: ${{ secrets.REGISTRY_PASSWORD }}
-        containerAppName: quantum-ai-backend
-        resourceGroup: quantum-synth-rg
-        imageToBuild: quantumsynthacr1757219498.azurecr.io/ai-processor:${{ github.sha }}
-</file>
-
-<file path="azure-static-web-apps.config.json">
-{
-  "locations": [
-    {
-      "appBuildCommand": "npm run build",
-      "appBuildOutputDir": "dist",
-      "appDevserverUrl": "http://localhost:3000",
-      "appName": "quantum-synth-frontend",
-      "resourceGroup": "quantum-synth-rg"
-    }
-  ]
-}
-</file>
-
-<file path="frontend/package.json">
-{
-  "name": "quantum-synth-frontend",
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "devDependencies": {
-    "@types/three": "^0.158.0",
-    "typescript": "^5.0.0",
-    "vite": "^5.0.0"
-  },
-  "dependencies": {
-    "three": "^0.158.0"
-  }
-}
-</file>
-
 <file path="frontend/src/audio-capture.ts">
 export class AudioCapture {
   private audioContext: AudioContext | null = null;
@@ -3626,6 +3609,23 @@ export class StealthAudioCapture {
 }
 </file>
 
+<file path="frontend/vite.config.ts">
+// frontend/vite.config.ts
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  server: {
+    host: true,         // expose on LAN
+    port: 5173,         // Vite default
+    proxy: {
+      "/api": "http://localhost:8080",
+      "/ws": { target: "http://localhost:8080", ws: true, changeOrigin: true },
+    },
+  },
+  build: { outDir: "dist" },
+});
+</file>
+
 <file path="run_backend_local.sh">
 #!/usr/bin/env bash
 set -euo pipefail
@@ -3745,263 +3745,6 @@ func main() {
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
-</file>
-
-<file path="frontend/src/neural-visualizer.ts">
-import * as THREE from "three";
-import { wsUrl } from "./backend-config";
-
-export class NeuralVisualizer {
-  private scene: THREE.Scene;
-  private camera: THREE.PerspectiveCamera;
-  private renderer: THREE.WebGLRenderer;
-  private particles: THREE.Points;
-  private ws: WebSocket | null = null;
-  private audioContext: AudioContext | null = null;
-  private analyser: AnalyserNode | null = null;
-
-  constructor(private canvas: HTMLCanvasElement) {
-    this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(
-      75,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000,
-    );
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-
-    this.init();
-  }
-
-  private async init() {
-    this.setupRenderer();
-    this.setupCamera();
-    this.setupLighting();
-    await this.connectToAIBackend();
-    this.animate();
-  }
-
-  private setupRenderer() {
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setClearColor(0x000000);
-    this.renderer.setPixelRatio(window.devicePixelRatio);
-  }
-
-  private setupCamera() {
-    this.camera.position.z = 50;
-    this.camera.lookAt(0, 0, 0);
-  }
-
-  private setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0x404040);
-    this.scene.add(ambientLight);
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    directionalLight.position.set(1, 1, 1);
-    this.scene.add(directionalLight);
-  }
-
-  private handleBinaryFrame(buf: ArrayBuffer) {
-  // Interpret as float32 PCM or magnitudes; downsample to ~64 bars
-  const samples = new Float32Array(buf);
-  if (!samples.length) return;
-
-  const canvas = (this as any).canvas as HTMLCanvasElement; // adapt to your field
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  const w = canvas.width, h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
-
-  const bars = 64;
-  const binSize = Math.max(1, Math.floor(samples.length / bars));
-  for (let i = 0; i < bars; i++) {
-    let acc = 0;
-    for (let j = 0; j < binSize; j++) {
-      const v = samples[i * binSize + j] ?? 0;
-      acc += Math.abs(v);
-    }
-    const avg = acc / binSize;                // 0..1-ish
-    const barH = Math.min(h, avg * h * 0.9);  // scale
-    const x = (i / bars) * w;
-    const bw = Math.max(2, (w / bars) * 0.8);
-    ctx.fillRect(x, h - barH, bw, barH);
-  }
-}
-
-
-  private async connectToAIBackend() {
-  try {
-    // create and ASSIGN the socket
-    this.ws = new WebSocket(wsUrl("/ws", import.meta.env?.VITE_BACKEND_BASE));
-
-
-    this.ws.onopen = () => {
-      console.log("Connected to AI Visual Processor");
-      this.startAudioProcessing();
-    };
-
-    this.ws.onmessage = async (event) => {
-  const parsed = await parseWsMessage(event.data);
-
-  if (!parsed) return;
-
-  if (parsed.kind === "json") {
-    try {
-      // Your existing JSON handler
-      this.handleAIMessage?.(parsed.value);
-    } catch (e) {
-      console.warn("handleAIMessage failed:", e);
-    }
-    return;
-  }
-
-  // Binary fallback: render something from samples
-  try {
-    this.handleBinaryFrame?.(parsed.value);
-  } catch (e) {
-    console.warn("handleBinaryFrame failed:", e);
-  }
-};
-
-    this.ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-    };
-  } catch (error) {
-    console.error("Failed to connect to AI backend:", error);
-  }
-}
-
-  private async startAudioProcessing() {
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          sampleRate: 44100,
-          channelCount: 2,
-        },
-      });
-
-      this.audioContext = new AudioContext();
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 2048;
-
-      const source = this.audioContext.createMediaStreamSource(stream);
-      source.connect(this.analyser);
-
-      this.processAudio();
-    } catch (error) {
-      console.error("Audio capture failed:", error);
-    }
-  }
-
-  private processAudio() {
-    if (!this.analyser || !this.ws) return;
-
-    const data = new Uint8Array(this.analyser.frequencyBinCount);
-
-    const processFrame = () => {
-      this.analyser!.getByteFrequencyData(data);
-
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        const audioData = {
-          fft: Array.from(data),
-          timestamp: Date.now(),
-          sessionId: Math.random().toString(36).substr(2, 9),
-        };
-        this.ws.send(JSON.stringify(audioData));
-      }
-
-      requestAnimationFrame(processFrame);
-    };
-
-    processFrame();
-  }
-
-  private handleAIMessage(universe: any) {
-    console.log("AI Generated Universe:", universe);
-    this.createVisualUniverse(universe);
-  }
-
-  private createVisualUniverse(universe: any) {
-    if (this.particles) {
-      this.scene.remove(this.particles);
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(universe.particleCount * 3);
-    const colors = new Float32Array(universe.particleCount * 3);
-
-    for (let i = 0; i < universe.particleCount * 3; i += 3) {
-      positions[i] = (Math.random() - 0.5) * 100;
-      positions[i + 1] = (Math.random() - 0.5) * 100;
-      positions[i + 2] = (Math.random() - 0.5) * 100;
-
-      const colorIndex = Math.floor(
-        Math.random() * universe.colorPalette.length,
-      );
-      const color = new THREE.Color(universe.colorPalette[colorIndex]);
-      colors[i] = color.r;
-      colors[i + 1] = color.g;
-      colors[i + 2] = color.b;
-    }
-
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-
-    const material = new THREE.PointsMaterial({
-      size: 0.5,
-      vertexColors: true,
-      sizeAttenuation: true,
-    });
-
-    this.particles = new THREE.Points(geometry, material);
-    this.scene.add(this.particles);
-  }
-
-  private animate() {
-    requestAnimationFrame(() => this.animate());
-
-    if (this.particles) {
-      this.particles.rotation.x += 0.001;
-      this.particles.rotation.y += 0.002;
-    }
-
-    this.renderer.render(this.scene, this.camera);
-  }
-
-  resize() {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-  }
-}
-
-async function parseWsMessage(data: unknown): Promise<{ kind: "json"; value: any } | { kind: "binary"; value: ArrayBuffer } | null> {
-  try {
-    if (typeof data === "string") {
-      return { kind: "json", value: JSON.parse(data) };
-    }
-    if (data instanceof Blob) {
-      // Try to parse as JSON first
-      const text = await data.text();
-      try {
-        return { kind: "json", value: JSON.parse(text) };
-      } catch {
-        // Not JSON — treat as binary
-        return { kind: "binary", value: await data.arrayBuffer() };
-      }
-    }
-    if (data instanceof ArrayBuffer) {
-      return { kind: "binary", value: data };
-    }
-  } catch (e) {
-    console.warn("WS message parse failed:", e);
-  }
-  return null;
-}
 </file>
 
 <file path="frontend/src/webgl-renderer.ts">
@@ -4305,16 +4048,6 @@ ENV PORT=8080
 CMD ["./ai-processor"]
 </file>
 
-<file path="frontend/src/backend-config.ts">
-export function wsUrl(path: string, override?: string) {
-  // If explicit base provided (like env), use it
-  const base = override || (typeof window !== "undefined" ? window.location.origin : "http://localhost:5173");
-  const url = new URL(path, base);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.toString();
-}
-</file>
-
 <file path="frontend/src/ui.ts">
 export class QuantumSynthUI {
   private container: HTMLDivElement;
@@ -4431,54 +4164,263 @@ export class QuantumSynthUI {
 }
 </file>
 
-<file path="frontend/src/backend-connection.ts">
-// frontend/src/backend-connection.ts
-import { wsUrl } from "./backend-config";
-
-export class BackendConnection {
-  private ws: WebSocket | null = null;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-
-  connect() {
-    const url = wsUrl("/ws", import.meta.env.VITE_BACKEND_BASE);
-    console.log("Connecting to:", url);
-
-    this.ws = new WebSocket(url); // <-- assign to this.ws
-
-    this.ws.onopen = () => {
-      console.log("✅ Connected to AI backend via", url.startsWith("wss:") ? "wss" : "ws");
-      this.reconnectAttempts = 0;
-    };
-
-    this.ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-    };
-
-    this.ws.onclose = () => {
-      console.log("WebSocket connection closed");
-      this.handleReconnect();
-    };
-
-    return this.ws;
-  }
-
-  // ...rest unchanged...
+<file path="frontend/src/backend-config.ts">
+export function wsUrl(path: string, override?: string) {
+  // If explicit base provided (like env), use it
+  const base = override || (typeof window !== "undefined" ? window.location.origin : "http://localhost:5173");
+  const url = new URL(path, base);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
 }
 </file>
 
-<file path="go.mod">
-module ai-processor
+<file path="frontend/src/neural-visualizer.ts">
+import * as THREE from "three";
+import { wsUrl } from "./backend-config";
 
-go 1.25.0
+function isSecureLike() {
+  return window.isSecureContext || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+}
+function assertMediaDevices() {
+  if (!("mediaDevices" in navigator)) {
+    throw new Error("Audio capture requires a secure context. Open via http://localhost:5173 or use HTTPS.");
+  }
+}
+async function parseWsMessage(data: unknown): Promise<
+  | { kind: "json"; value: any }
+  | { kind: "binary"; value: ArrayBuffer }
+  | null
+> {
+  try {
+    if (typeof data === "string") return { kind: "json", value: JSON.parse(data) };
+    if (data instanceof Blob) {
+      const text = await data.text();
+      try { return { kind: "json", value: JSON.parse(text) }; }
+      catch { return { kind: "binary", value: await data.arrayBuffer() }; }
+    }
+    if (data instanceof ArrayBuffer) return { kind: "binary", value: data };
+  } catch {}
+  return null;
+}
 
-require (
-	github.com/gorilla/handlers v1.5.2
-	github.com/gorilla/mux v1.8.1
-	github.com/gorilla/websocket v1.5.3
-)
+export class NeuralVisualizer {
+  // canvases
+  private overlay: HTMLCanvasElement;
+  private octx: CanvasRenderingContext2D | null;
 
-require github.com/felixge/httpsnoop v1.0.3 // indirect
+  // three
+  private scene: THREE.Scene;
+  private camera: THREE.PerspectiveCamera;
+  private renderer: THREE.WebGLRenderer;
+
+  // audio + ws
+  private ws: WebSocket | null = null;
+  private audioCtx: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private fft: Uint8Array | null = null;
+
+  // misc
+  private lastStatus = "";
+  private raf = 0;
+
+  constructor(private canvas: HTMLCanvasElement) {
+    // THREE on main canvas
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.renderer.setClearColor(0x000000);
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+
+    // overlay 2D for bars/status
+    this.overlay = document.createElement("canvas");
+    this.overlay.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:10";
+    document.body.appendChild(this.overlay);
+    this.octx = this.overlay.getContext("2d");
+
+    this.setupLighting();
+    window.addEventListener("resize", () => this.resize());
+    this.resize();
+
+    this.connectToAIBackend();
+    this.animate(); // start loop
+  }
+
+  private setupLighting() {
+    const ambient = new THREE.AmbientLight(0x404040);
+    this.scene.add(ambient);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.5);
+    dir.position.set(1, 1, 1);
+    this.scene.add(dir);
+    this.camera.position.z = 50;
+  }
+
+  resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+
+    // WebGL canvas
+    this.renderer.setSize(w, h);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+
+    // 2D overlay with DPR scaling
+    const dpr = window.devicePixelRatio || 1;
+    this.overlay.style.width = `${w}px`;
+    this.overlay.style.height = `${h}px`;
+    this.overlay.width = Math.floor(w * dpr);
+    this.overlay.height = Math.floor(h * dpr);
+    if (this.octx) {
+      this.octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.octx.clearRect(0, 0, w, h);
+    }
+    if (this.lastStatus) this.renderStatus(this.lastStatus);
+  }
+
+  private renderStatus(msg: string) {
+    this.lastStatus = msg;
+    const ctx = this.octx; if (!ctx) return;
+    const w = this.overlay.width / (window.devicePixelRatio || 1);
+    const h = this.overlay.height / (window.devicePixelRatio || 1);
+    ctx.clearRect(0, 0, w, h);
+    if (!msg) return;
+    ctx.fillStyle = "#fff";
+    ctx.font = "16px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(msg, w / 2, h / 2);
+  }
+
+  private animate = () => {
+    this.raf = requestAnimationFrame(this.animate);
+    this.drawBarsFromAnalyser(); // <- this exists below
+    this.renderer.render(this.scene, this.camera);
+  };
+
+  async connectToAIBackend() {
+    try {
+      this.ws = new WebSocket(wsUrl("/ws", import.meta.env?.VITE_BACKEND_BASE));
+      this.ws.binaryType = "arraybuffer";
+      this.ws.onopen = () => console.log("Connected to AI Visual Processor");
+      this.ws.onmessage = async (event) => {
+        const parsed = await parseWsMessage(event.data);
+        if (!parsed) return;
+        if (parsed.kind === "binary") {
+          this.drawBarsFromArrayBuffer(parsed.value);
+        } else {
+          // future: handle JSON protocol
+        }
+      };
+      this.ws.onerror = (e) => console.error("WebSocket error:", e);
+    } catch (e) {
+      console.error("WS connect failed:", e);
+    }
+  }
+
+  // start audio capture from UI
+  async startAudioProcessing(mode: "display" | "mic" | "osc" = "display") {
+    try {
+      if (mode !== "osc") assertMediaDevices();
+
+      if (!this.audioCtx) {
+        const AC = window.AudioContext || (window as any).webkitAudioContext;
+        this.audioCtx = new AC();
+      }
+      await this.audioCtx.resume();
+
+      let sourceNode: MediaStreamAudioSourceNode | OscillatorNode;
+
+      if (mode === "display") {
+        if (!isSecureLike()) throw new Error("Screen-audio capture is blocked on non-secure origins. Use http://localhost:5173 or HTTPS.");
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: { echoCancellation: false, noiseSuppression: false, sampleRate: 44100 } as any,
+        });
+        if (!stream.getAudioTracks().length) throw new Error('No audio track. Select "Entire screen" and tick "Share audio".');
+        sourceNode = this.audioCtx.createMediaStreamSource(stream);
+      } else if (mode === "mic") {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: false, noiseSuppression: false, sampleRate: 44100 },
+        });
+        sourceNode = this.audioCtx.createMediaStreamSource(stream);
+      } else {
+        const osc = this.audioCtx.createOscillator();
+        osc.type = "sawtooth"; osc.frequency.value = 220; osc.start();
+        sourceNode = osc;
+      }
+
+      if (!this.analyser) {
+        this.analyser = this.audioCtx.createAnalyser();
+        this.analyser.fftSize = 2048;
+        this.analyser.smoothingTimeConstant = 0.8;
+      }
+      // @ts-expect-error narrow type ok
+      sourceNode.connect(this.analyser);
+      this.fft = new Uint8Array(this.analyser.frequencyBinCount);
+
+      this.renderStatus("");
+      console.log("Audio processing started via mode:", mode);
+    } catch (err) {
+      console.error("Audio capture failed:", err);
+      this.renderStatus(String((err as Error)?.message || err));
+    }
+  }
+
+  // ===== single, canonical versions below (no duplicates) =====
+
+  private drawBarsFromAnalyser() {
+    if (!this.analyser || !this.fft || !this.octx) return;
+    this.analyser.getByteFrequencyData(this.fft);
+
+    const ctx = this.octx;
+    const w = this.overlay.width / (window.devicePixelRatio || 1);
+    const h = this.overlay.height / (window.devicePixelRatio || 1);
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#ffffff";
+
+    const bars = 64;
+    const binSize = Math.max(1, Math.floor(this.fft.length / bars));
+    const bw = Math.max(2, (w / bars) * 0.8);
+
+    for (let i = 0; i < bars; i++) {
+      let acc = 0;
+      for (let j = 0; j < binSize; j++) acc += this.fft[i * binSize + j] || 0;
+      const avg = acc / binSize;                 // 0..255
+      const barH = (avg / 255) * h * 0.9;        // scale
+      const x = (i / bars) * w;
+      ctx.fillRect(x, h - barH, bw, barH);
+    }
+  }
+
+  private drawBarsFromArrayBuffer(buf: ArrayBuffer) {
+    if (!this.octx) return;
+    const samples = new Float32Array(buf);
+    if (!samples.length) return;
+
+    const ctx = this.octx;
+    const w = this.overlay.width / (window.devicePixelRatio || 1);
+    const h = this.overlay.height / (window.devicePixelRatio || 1);
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#ffffff";
+
+    const bars = 64;
+    const binSize = Math.max(1, Math.floor(samples.length / bars));
+    const bw = Math.max(2, (w / bars) * 0.8);
+
+    for (let i = 0; i < bars; i++) {
+      let acc = 0;
+      for (let j = 0; j < binSize; j++) acc += Math.abs(samples[i * binSize + j] || 0);
+      const avg = acc / binSize;
+      const barH = Math.min(h, avg * h * 0.9);
+      const x = (i / bars) * w;
+      ctx.fillRect(x, h - barH, bw, barH);
+    }
+  }
+
+  destroy() {
+    cancelAnimationFrame(this.raf);
+    if (this.ws) { this.ws.close(); this.ws = null; }
+  }
+}
 </file>
 
 <file path=".github/workflows/frontend-deploy.yml">
@@ -4538,6 +4480,20 @@ jobs:
               --overwrite true
         env:
           AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+</file>
+
+<file path="go.mod">
+module ai-processor
+
+go 1.25.0
+
+require (
+	github.com/gorilla/handlers v1.5.2
+	github.com/gorilla/mux v1.8.1
+	github.com/gorilla/websocket v1.5.3
+)
+
+require github.com/felixge/httpsnoop v1.0.3 // indirect
 </file>
 
 <file path="README.md">
@@ -4691,6 +4647,42 @@ See **LICENSE** in the repository.
 
 Built by [@simon-hirst](https://github.com/simon-hirst).
 Shader & system polish with love from the community.
+</file>
+
+<file path="frontend/src/backend-connection.ts">
+// frontend/src/backend-connection.ts
+import { wsUrl } from "./backend-config";
+
+export class BackendConnection {
+  private ws: WebSocket | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+
+  connect() {
+    const url = wsUrl("/ws", import.meta.env.VITE_BACKEND_BASE);
+    console.log("Connecting to:", url);
+
+    this.ws = new WebSocket(url); // <-- assign to this.ws
+
+    this.ws.onopen = () => {
+  console.log("Connected to AI Visual Processor");
+  // Do NOT auto-start capture here. We'll start it from a user gesture (buttons in UI).
+};
+
+    this.ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    this.ws.onclose = () => {
+      console.log("WebSocket connection closed");
+      this.handleReconnect();
+    };
+
+    return this.ws;
+  }
+
+  // ...rest unchanged...
+}
 </file>
 
 <file path=".gitignore">
@@ -5349,28 +5341,19 @@ void main(){
 * {
   box-sizing: border-box;
 }
-html,
-body,
-#app {
+/* frontend/src/style.css */
+html, body, #app {
   height: 100%;
 }
+* { box-sizing: border-box; }
 body {
   margin: 0;
-  background: radial-gradient(1200px 800px at 10% -10%, #0e1622, #0c0f13 55%),
-    var(--bg);
-  color: var(--text);
-  font:
-    14px/1.5 Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    Segoe UI,
-    Roboto,
-    Ubuntu,
-    Cantarell,
-    Noto Sans,
-    Helvetica,
-    Arial;
+  background: #000;
+}
+#quantumCanvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
 }
 a {
   color: var(--accent);
@@ -5834,6 +5817,43 @@ if (!canvas) {
 }
 
 const viz = new NeuralVisualizer(canvas);
+
+function button(label: string, onClick: () => void) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.style.cssText = "padding:10px 14px;margin:6px;border-radius:8px;border:0;background:#4F46E5;color:#fff;font-weight:600;cursor:pointer";
+  b.onclick = onClick;
+  return b;
+}
+
+(function mountCaptureOverlay() {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none";
+  const panel = document.createElement("div");
+  panel.style.cssText = "pointer-events:auto;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);padding:16px 20px;border-radius:12px;color:#fff;font-family:system-ui, sans-serif;text-align:center;max-width:560px";
+  const title = document.createElement("div");
+  title.textContent = "Choose an audio source";
+  title.style.cssText = "font-size:18px;font-weight:700;margin-bottom:8px";
+  const hint = document.createElement("div");
+  hint.style.cssText = "font-size:13px;opacity:.9;margin-bottom:12px";
+  hint.innerHTML = location.hostname.startsWith("192.168.") || location.hostname.includes(".")
+    ? 'Tip: for screen-audio capture, open this on <b>http://localhost:5173</b> or use HTTPS.'
+    : 'Grant permission to capture audio. For screen-audio, select "Entire screen" and tick "Share audio".';
+
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex;flex-wrap:wrap;justify-content:center;margin-top:6px";
+
+  row.append(
+    button("Share system audio", () => { viz.startAudioProcessing("display"); wrap.remove(); }),
+    button("Use microphone", () => { viz.startAudioProcessing("mic"); wrap.remove(); }),
+    button("Demo signal", () => { viz.startAudioProcessing("osc"); wrap.remove(); }),
+  );
+
+  panel.append(title, hint, row);
+  wrap.append(panel);
+  document.body.append(wrap);
+})();
+
 
 window.addEventListener("resize", () => viz.resize());
 </file>

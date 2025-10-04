@@ -26,6 +26,73 @@ async function parseWsMessage(data: unknown): Promise<
   return null;
 }
 
+const frag = /* glsl */`
+  precision highp float;
+  varying vec2 vUv;
+  uniform float uTime;
+  uniform vec2  uRes;
+  uniform float uBass;
+  uniform float uMid;
+  uniform float uHigh;
+  uniform vec3  uTint;   // NEW
+
+  float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }
+
+  void main() {
+    vec2 uv = vUv;
+    uv -= 0.5;
+    uv.x *= uRes.x / uRes.y;
+
+    float bass = clamp(uBass, 0.0, 1.0);
+    float mid  = clamp(uMid,  0.0, 1.0);
+    float high = clamp(uHigh, 0.0, 1.0);
+
+    float t = uTime * (0.2 + 0.8*mid);
+    float r = length(uv);
+    float a = atan(uv.y, uv.x);
+
+    float ripple = sin(10.0*r - t*6.2831) * (0.2 + 0.8*bass);
+    float swirl  = sin(a*6.0 + t*2.0) * (0.1 + 0.6*high);
+    float bands  = sin((r*30.0 + a*4.0) + t*3.0) * (0.2 + mid);
+
+    float m = ripple + swirl + bands;
+    vec3 col = vec3(0.05,0.05,0.06);
+    col += uTint * max(0.0, m);   // use tint
+
+    col *= smoothstep(1.2, 0.2, r);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+
+private uniforms = {
+  uTime: { value: 0 },
+  uRes:  { value: new THREE.Vector2(1,1) },
+  uBass: { value: 0 },
+  uMid:  { value: 0 },
+  uHigh: { value: 0 },
+  uTint: { value: new THREE.Vector3(0.9, 0.5, 1.2) }, // NEW
+};
+private visualGain = 1.0; // NEW
+
+setGain(v: number) { this.visualGain = Math.max(0.1, Math.min(5, v)); }
+setTheme(name: "Purple"|"Neon"|"Sunset") {
+  this.uniforms.uRes.value.set(window.innerWidth, window.innerHeight);
+
+  if (name === "Neon")    t.set(0.5, 1.2, 1.2);
+  else if (name === "Sunset") t.set(1.2, 0.8, 0.4);
+  else                    t.set(0.9, 0.5, 1.2); // Purple default
+}
+
+
+const g = this.visualGain;
+return {
+  bass: Math.min(1, range(20, 140)   * g),
+  mid:  Math.min(1, range(140, 2000) * g),
+  high: Math.min(1, range(2000,8000) * g),
+};
+
+
 export class NeuralVisualizer {
   // canvases
   private overlay: HTMLCanvasElement;

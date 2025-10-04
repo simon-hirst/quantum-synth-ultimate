@@ -21,6 +21,25 @@ function button(label: string, onClick: () => void) {
   return b;
 }
 
+// Sensitivity (gain)
+{
+  const gain = document.createElement("input");
+  gain.type = "range"; gain.min = "0.1"; gain.max = "5"; gain.step = "0.1"; gain.value = "1";
+  gain.oninput = () => viz.setGain(parseFloat(gain.value));
+  wrap.append(label("Sensitivity", gain));
+}
+// Theme
+{
+  const theme = document.createElement("select");
+  ["Purple","Neon","Sunset"].forEach(n => {
+    const o = document.createElement("option"); o.value=n; o.text=n; theme.append(o);
+  });
+  theme.onchange = () => viz.setTheme(theme.value as any);
+  theme.value = "Purple";
+  wrap.append(label("Theme", theme));
+}
+
+
 (function mountCaptureOverlay() {
   const wrap = document.createElement("div");
   wrap.style.cssText = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none";
