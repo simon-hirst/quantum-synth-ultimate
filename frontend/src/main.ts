@@ -13,4 +13,41 @@ if (!canvas) {
 
 const viz = new NeuralVisualizer(canvas);
 
+function button(label: string, onClick: () => void) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.style.cssText = "padding:10px 14px;margin:6px;border-radius:8px;border:0;background:#4F46E5;color:#fff;font-weight:600;cursor:pointer";
+  b.onclick = onClick;
+  return b;
+}
+
+(function mountCaptureOverlay() {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none";
+  const panel = document.createElement("div");
+  panel.style.cssText = "pointer-events:auto;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);padding:16px 20px;border-radius:12px;color:#fff;font-family:system-ui, sans-serif;text-align:center;max-width:560px";
+  const title = document.createElement("div");
+  title.textContent = "Choose an audio source";
+  title.style.cssText = "font-size:18px;font-weight:700;margin-bottom:8px";
+  const hint = document.createElement("div");
+  hint.style.cssText = "font-size:13px;opacity:.9;margin-bottom:12px";
+  hint.innerHTML = location.hostname.startsWith("192.168.") || location.hostname.includes(".")
+    ? 'Tip: for screen-audio capture, open this on <b>http://localhost:5173</b> or use HTTPS.'
+    : 'Grant permission to capture audio. For screen-audio, select "Entire screen" and tick "Share audio".';
+
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex;flex-wrap:wrap;justify-content:center;margin-top:6px";
+
+  row.append(
+    button("Share system audio", () => { viz.startAudioProcessing("display"); wrap.remove(); }),
+    button("Use microphone", () => { viz.startAudioProcessing("mic"); wrap.remove(); }),
+    button("Demo signal", () => { viz.startAudioProcessing("osc"); wrap.remove(); }),
+  );
+
+  panel.append(title, hint, row);
+  wrap.append(panel);
+  document.body.append(wrap);
+})();
+
+
 window.addEventListener("resize", () => viz.resize());

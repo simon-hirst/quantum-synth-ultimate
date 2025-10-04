@@ -87,9 +87,9 @@ export class NeuralVisualizer {
 
 
     this.ws.onopen = () => {
-      console.log("Connected to AI Visual Processor");
-      this.startAudioProcessing();
-    };
+  console.log("Connected to AI Visual Processor");
+  // Do NOT auto-start capture here. We'll start it from a user gesture (buttons in UI).
+};
 
     this.ws.onmessage = async (event) => {
   const parsed = await parseWsMessage(event.data);
@@ -122,30 +122,82 @@ export class NeuralVisualizer {
   }
 }
 
-  private async startAudioProcessing() {
-    try {
+  async startAudioProcessing(mode: "display" | "mic" | "osc" = "display") {
+  try {
+    if (mode !== "osc") {
+      assertMediaDevices();
+    }
+
+    // Ensure an AudioContext exists
+    if (!this.audioCtx) {
+      const AC = window.AudioContext || (window as any).webkitAudioContext;
+      this.audioCtx = new AC();
+    }
+    await this.audioCtx.resume();
+
+    let sourceNode: MediaStreamAudioSourceNode | OscillatorNode;
+
+    if (mode === "display") {
+      if (!isSecureLike()) {
+        throw new Error("Screen-audio capture is blocked on non-secure origins. Use http://localhost:5173 or HTTPS.");
+      }
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          sampleRate: 44100,
-          channelCount: 2,
-        },
+        audio: { echoCancellation: false, noiseSuppression: false, sampleRate: 44100 } as any,
       });
-
-      this.audioContext = new AudioContext();
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 2048;
-
-      const source = this.audioContext.createMediaStreamSource(stream);
-      source.connect(this.analyser);
-
-      this.processAudio();
-    } catch (error) {
-      console.error("Audio capture failed:", error);
+      if (!stream.getAudioTracks().length) {
+        throw new Error('No audio track in shared stream. Select "Entire screen" and tick "Share audio".');
+      }
+      sourceNode = this.audioCtx.createMediaStreamSource(stream);
+    } else if (mode === "mic") {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, sampleRate: 44100 },
+      });
+      sourceNode = this.audioCtx.createMediaStreamSource(stream);
+    } else {
+      // Demo oscillator
+      const osc = this.audioCtx.createOscillator();
+      osc.type = "sawtooth";
+      osc.frequency.value = 220;
+      sourceNode = osc;
+      osc.start();
     }
+
+    // Build analyser chain
+    if (!this.analyser) {
+      this.analyser = this.audioCtx.createAnalyser();
+      this.analyser.fftSize = 2048;
+    }
+    if (sourceNode instanceof OscillatorNode) {
+      sourceNode.connect(this.analyser);
+    } else {
+      sourceNode.connect(this.analyser);
+    }
+
+    // Kick your render loop if not already running
+    this.startRenderLoop?.();
+
+    console.log("Audio processing started via mode:", mode);
+    this.renderStatus("");
+  } catch (err) {
+    console.error("Audio capture failed:", err);
+    this.renderStatus(String((err as Error)?.message || err));
   }
+}
+
+private lastStatus = "";
+renderStatus(msg: string) {
+  this.lastStatus = msg;
+  const ctx = this.canvas.getContext("2d");
+  if (!ctx) return;
+  const { width: w, height: h } = this.canvas;
+  ctx.clearRect(0, 0, w, h);
+  if (!msg) return;
+  ctx.fillStyle = "#fff";
+  ctx.font = "16px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(msg, w / 2, h / 2);
+}
 
   private processAudio() {
     if (!this.analyser || !this.ws) return;
@@ -226,6 +278,17 @@ export class NeuralVisualizer {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+}
+
+function isSecureLike() {
+  // Chrome treats http://localhost as secure; LAN IPs are not.
+  return window.isSecureContext || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+}
+
+function assertMediaDevices() {
+  if (!("mediaDevices" in navigator)) {
+    throw new Error("Audio capture requires a secure context. Open via http://localhost:5173 or use HTTPS.");
   }
 }
 

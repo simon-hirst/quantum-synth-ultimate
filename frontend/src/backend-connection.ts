@@ -13,9 +13,9 @@ export class BackendConnection {
     this.ws = new WebSocket(url); // <-- assign to this.ws
 
     this.ws.onopen = () => {
-      console.log("✅ Connected to AI backend via", url.startsWith("wss:") ? "wss" : "ws");
-      this.reconnectAttempts = 0;
-    };
+  console.log("Connected to AI Visual Processor");
+  // Do NOT auto-start capture here. We'll start it from a user gesture (buttons in UI).
+};
 
     this.ws.onerror = (error) => {
       console.error("WebSocket error:", error);
