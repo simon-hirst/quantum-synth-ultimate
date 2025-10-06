@@ -1,110 +1,51 @@
-// frontend/src/main.ts
 import "./style.css";
 import { NeuralVisualizer } from "./neural-visualizer";
 
-// Prefer the canvas in frontend/index.html, fall back to the root index.html id
-const canvas =
-  (document.getElementById("quantumCanvas") as HTMLCanvasElement) ||
-  (document.getElementById("glCanvas") as HTMLCanvasElement);
-
-if (!canvas) {
-  throw new Error("Canvas element not found. Make sure index.html has #quantumCanvas.");
-}
-
+const canvas = document.getElementById("visual") as HTMLCanvasElement;
 const viz = new NeuralVisualizer(canvas);
 
-function copy(text: string) {
-  navigator.clipboard?.writeText(text).catch(() => {});
+function wrap() {
+  const el = document.createElement("div");
+  el.style.cssText = "position:fixed;top:12px;right:12px;z-index:20;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);padding:10px 12px;border-radius:12px;display:flex;gap:10px;align-items:center;color:#fff;font:13px system-ui";
+  return el;
 }
-
-function sharePanel() {
-  const wrap = document.createElement("div");
-  wrap.style.cssText = "position:fixed;bottom:10px;right:10px;z-index:30;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);color:#fff;font:13px system-ui;padding:10px 12px;border-radius:12px;display:flex;gap:10px;align-items:center";
-
-  const btn = (label:string, on:()=>void) => {
-    const b = document.createElement("button");
-    b.textContent = label;
-    b.style.cssText = "padding:6px 10px;border:0;border-radius:8px;background:#10B981;color:#000;cursor:pointer;font-weight:600";
-    b.onclick = on; return b;
-  };
-
-  const url = location.origin; // when tunneled, this is your https://*.trycloudflare.com
-  const link = document.createElement("a");
-  link.href = url; link.textContent = url;
-  link.style.cssText = "color:#fff;text-decoration:underline;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
-
-  const qrBtn = btn("QR", async () => {
-    const dlg = document.createElement("div");
-    dlg.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:40";
-    const box = document.createElement("div");
-    box.style.cssText = "background:#111;padding:16px;border-radius:12px;display:flex;flex-direction:column;gap:8px;align-items:center";
-    const canvas = document.createElement("canvas");
-    await QRCode.toCanvas(canvas, url, { margin: 1, width: 240 });
-    const close = btn("Close", () => dlg.remove());
-    box.append(canvas, close);
-    dlg.append(box);
-    document.body.append(dlg);
-  });
-
-  wrap.append(link, btn("Copy", ()=>copy(url)), qrBtn);
-  document.body.append(wrap);
-}
-sharePanel();
-
-function button(label: string, onClick: () => void) {
+function button(label: string, on: () => void, bg = "#4F46E5") {
   const b = document.createElement("button");
   b.textContent = label;
-  b.style.cssText = "padding:10px 14px;margin:6px;border-radius:8px;border:0;background:#4F46E5;color:#fff;font-weight:600;cursor:pointer";
-  b.onclick = onClick;
-  return b;
+  b.style.cssText = `padding:6px 10px;border:0;border-radius:8px;background:${bg};color:#fff;cursor:pointer`;
+  b.onclick = on; return b;
+}
+function row(text: string, el: HTMLElement) {
+  const r = document.createElement("div");
+  r.style.cssText = "display:flex;gap:6px;align-items:center";
+  const t = document.createElement("span");
+  t.textContent = text; t.style.opacity = "0.8";
+  r.append(t, el); return r;
 }
 
-// Sensitivity (gain)
-{
-  const gain = document.createElement("input");
-  gain.type = "range"; gain.min = "0.1"; gain.max = "5"; gain.step = "0.1"; gain.value = "1";
-  gain.oninput = () => viz.setGain(parseFloat(gain.value));
-  wrap.append(label("Sensitivity", gain));
-}
-// Theme
-{
-  const theme = document.createElement("select");
-  ["Purple","Neon","Sunset"].forEach(n => {
-    const o = document.createElement("option"); o.value=n; o.text=n; theme.append(o);
-  });
-  theme.onchange = () => viz.setTheme(theme.value as any);
-  theme.value = "Purple";
-  wrap.append(label("Theme", theme));
-}
+const panel = wrap();
+panel.append(
+  button("System", () => viz.start("display")),
+  button("Mic", () => viz.start("mic")),
+  button("Demo", () => viz.start("osc"), "#10B981")
+);
 
+const gain = document.createElement("input");
+gain.type = "range"; gain.min = "0.1"; gain.max = "5"; gain.step = "0.1"; gain.value = "1.2";
+gain.oninput = () => viz.setGain(parseFloat(gain.value));
+panel.append(row("Sensitivity", gain));
 
-(function mountCaptureOverlay() {
-  const wrap = document.createElement("div");
-  wrap.style.cssText = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none";
-  const panel = document.createElement("div");
-  panel.style.cssText = "pointer-events:auto;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);padding:16px 20px;border-radius:12px;color:#fff;font-family:system-ui, sans-serif;text-align:center;max-width:560px";
-  const title = document.createElement("div");
-  title.textContent = "Choose an audio source";
-  title.style.cssText = "font-size:18px;font-weight:700;margin-bottom:8px";
-  const hint = document.createElement("div");
-  hint.style.cssText = "font-size:13px;opacity:.9;margin-bottom:12px";
-  hint.innerHTML = location.hostname.startsWith("192.168.") || location.hostname.includes(".")
-    ? 'Tip: for screen-audio capture, open this on <b>http://localhost:5173</b> or use HTTPS.'
-    : 'Grant permission to capture audio. For screen-audio, select "Entire screen" and tick "Share audio".';
+const preset = document.createElement("select");
+["Aurora","Neon","Sunset","Lush","Candy"].forEach(n => {
+  const o = document.createElement("option"); o.value = n; o.text = n; preset.append(o);
+});
+preset.onchange = () => viz.setTheme(preset.value as any);
+preset.value = "Aurora";
+panel.append(row("Theme", preset));
 
-  const row = document.createElement("div");
-  row.style.cssText = "display:flex;flex-wrap:wrap;justify-content:center;margin-top:6px";
+panel.append(button("Fullscreen", () => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+  else document.exitFullscreen();
+}, "#374151"));
 
-  row.append(
-    button("Share system audio", () => { viz.startAudioProcessing("display"); wrap.remove(); }),
-    button("Use microphone", () => { viz.startAudioProcessing("mic"); wrap.remove(); }),
-    button("Demo signal", () => { viz.startAudioProcessing("osc"); wrap.remove(); }),
-  );
-
-  panel.append(title, hint, row);
-  wrap.append(panel);
-  document.body.append(wrap);
-})();
-
-
-window.addEventListener("resize", () => viz.resize());
+document.body.append(panel);

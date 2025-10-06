@@ -1,9 +1,4 @@
-# QuantumSynth — canonical .gitignore
-
-# Hide all local helper scripts (kept locally; not in repo)
 scripts/
-
-# Node / frontend
 node_modules/
 frontend/node_modules/
 dist/
@@ -13,15 +8,11 @@ frontend/.vite/
 .parcel-cache/
 .cache/
 *.tsbuildinfo
-
-# Logs
 logs/
 *.log
 npm-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-
-# Env files
 .env
 .env.*
 .env.local
@@ -30,8 +21,6 @@ frontend/.env
 frontend/.env.*
 frontend/.env.local
 frontend/.env.*.local
-
-# Secrets / keys / creds
 *.pem
 *.key
 *.p12
@@ -47,8 +36,6 @@ id_ed25519
 secret.*
 secrets.*
 credentials.*
-
-# Editors / OS
 .DS_Store
 Thumbs.db
 .idea/
@@ -58,40 +45,10 @@ Thumbs.db
 *.bak
 *.orig
 *.rej
-
-# Binaries
 bin/
 *.exe
 *.dll
 *.so
 *.dylib
-
-# Coverage
 coverage/
 .nyc_output/
-# QS ignore block
-scripts/
-# build artifacts
-dist/
-frontend/dist/
-.vite/
-frontend/.vite/
-node_modules/
-frontend/node_modules/
-# env/secrets (repo should use GitHub Secrets)
-.env
-.env.*
-frontend/.env
-frontend/.env.*
-# OS/editor
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-# misc
-*.tmp
-*.log
-npm-debug.log*
-yarn-error.log*
-pnpm-debug.log*

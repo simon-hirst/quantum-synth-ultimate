@@ -7,18 +7,15 @@ import (
 )
 
 func securityHeaders(next http.Handler) http.Handler {
-	// Only enable when explicitly requested (prod builds).
 	if os.Getenv("ENABLE_SECURITY_HEADERS") != "1" {
 		return next
 	}
 
-	// Allow 'self' and wss:, plus any extra connect targets via ALLOWED_ORIGINS.
 	connectSrc := []string{"'self'", "wss:"}
 	if extra := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS")); extra != "" {
 		for _, o := range strings.Split(extra, ",") {
-			o = strings.TrimSpace(o)
-			if o != "" {
-				connectSrc = append(connectSrc, o)
+			if s := strings.TrimSpace(o); s != "" {
+				connectSrc = append(connectSrc, s)
 			}
 		}
 	}
@@ -37,11 +34,9 @@ func securityHeaders(next http.Handler) http.Handler {
 	}, "; ")
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Do not set HSTS on random trycloudflare subdomains.
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("X-Frame-Options", "DENY")
-		// Permissions-Policy: allow fullscreen, display-capture, microphone on self
 		w.Header().Set("Permissions-Policy", "fullscreen=(self), display-capture=(self), microphone=(self)")
 		w.Header().Set("Content-Security-Policy", csp)
 		next.ServeHTTP(w, r)

@@ -1,22 +1,12 @@
-//go:build !js
-
 package main
 
 import (
-	"bytes"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
-	"fmt"
-	"image"
-	"image/color"
-	"image/draw"
-	"image/png"
 	"log"
-	"math"
-	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gorilla/handlers"
@@ -24,518 +14,183 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type ShaderParams struct {
-	Type       string        `json:"type"`
-	Name       string        `json:"name"`
-	Code       string        `json:"code"`
-	Complexity int           `json:"complexity"`
-	Version    string        `json:"version"`
-	Uniforms   []UniformMeta `json:"uniforms,omitempty"`
-	Textures   []TextureMeta `json:"textures,omitempty"`
-}
+/* ---------- env & helpers ---------- */
 
-type UniformMeta struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-}
+var (
+	appVersion     = "dev"
+	appBuildTime   = "unknown"
+	listenAddr     = getenv("PORT", "8080")
+	serveStaticDir = getenv("STATIC_DIR", "./frontend/dist")
+	allowedOrigins = splitAndTrim(os.Getenv("ALLOWED_ORIGINS")) // CSV; empty = allow all
+)
 
-type TextureMeta struct {
-	Name     string `json:"name"`
-	DataURL  string `json:"dataUrl"`
-	Width    int    `json:"width"`
-	Height   int    `json:"height"`
-	GridCols int    `json:"gridCols,omitempty"`
-	GridRows int    `json:"gridRows,omitempty"`
-	Frames   int    `json:"frames,omitempty"`
-	FPS      int    `json:"fps,omitempty"`
-}
-
-func main() {
-	rand.Seed(time.Now().UnixNano())
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+func getenv(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
 	}
-
-	router := mux.NewRouter()
-
-	router.HandleFunc("/api/shader/next", getNextShader).Methods("GET", "OPTIONS")
-	router.HandleFunc("/api/shader/current", getNextShader).Methods("GET", "OPTIONS")
-	router.HandleFunc("/api/health", healthCheck).Methods("GET", "OPTIONS")
-	router.HandleFunc("/ws", wsHandler).Methods("GET")
-
-	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./frontend/dist/")))
-
-	corsMiddleware := handlers.CORS(
-		handlers.AllowedOrigins([]string{"*"}),
-		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
-		handlers.AllowedHeaders([]string{"Content-Type", "Authorization", "X-Requested-With"}),
-		handlers.AllowCredentials(),
-	)
-
-	fmt.Printf("QuantumSynth Infinite server starting on :%s\n", port)
-
-	handler := handlers.CORS(corsOpts...)(handlers.ProxyHeaders(router))
-if os.Getenv("ENABLE_SECURITY_HEADERS") == "1" {
-    handler = securityHeaders(handler)
+	return def
 }
-	server := &http.Server{
-		Addr:         ":" + port,
-		Handler:      handler,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+func splitAndTrim(csv string) []string {
+	if csv == "" {
+		return nil
 	}
-	log.Fatal(server.ListenAndServe())
+	parts := strings.Split(csv, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
-func optionsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-	w.WriteHeader(http.StatusOK)
+/* ---------- WS upgrader & keepalive ---------- */
+
+var wsUpgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		if len(allowedOrigins) == 0 {
+			return true
+		}
+		origin := r.Header.Get("Origin")
+		for _, o := range allowedOrigins {
+			if strings.EqualFold(o, origin) {
+				return true
+			}
+		}
+		return false
+	},
 }
 
-func jsonOK(w http.ResponseWriter) {
+const (
+	writeWait  = 10 * time.Second
+	pongWait   = 75 * time.Second
+	pingPeriod = 30 * time.Second
+)
+
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("WS: upgrade from Origin=%q Host=%q", r.Header.Get("Origin"), r.Host)
+
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("WS upgrade failed: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	conn.SetReadLimit(1 << 20)
+	conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
+	// read pump
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Printf("WS read error: %v", err)
+				}
+				return
+			}
+		}
+	}()
+
+	// write ping pump
+	ticker := time.NewTicker(pingPeriod)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Printf("WS ping failed: %v", err)
+				return
+			}
+		}
+	}
+}
+
+/* ---------- API ---------- */
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-}
-
-func getNextShader(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "OPTIONS" {
-		optionsHandler(w, r)
-		return
-	}
-
-	flowW, flowH := 256, 256
-	flowTex := makeFlowField(flowW, flowH)
-	flowURL := encodePNGDataURL(flowTex)
-
-	frames, fps := 16, 24
-	gridCols, gridRows := 4, 4
-	atlas, aw, ah := makeRDAtlas(256, 256, frames, gridCols, gridRows)
-	rdURL := encodePNGDataURL(atlas)
-
-	fs := serverCompositeFS()
-
-	payload := ShaderParams{
-		Type:       "composite",
-		Name:       "Flow+RD Composite",
-		Code:       fs,
-		Complexity: 8,
-		Version:    "2.3.0",
-		Uniforms: []UniformMeta{
-			{Name: "uTime", Type: "float"}, {Name: "uRes", Type: "vec2"},
-			{Name: "uLevel", Type: "float"}, {Name: "uBands", Type: "vec3"},
-			{Name: "uPulse", Type: "float"}, {Name: "uBeat", Type: "float"},
-			{Name: "uImpact", Type: "float"},
-			{Name: "uFlowTex", Type: "sampler2D"},
-			{Name: "uRDAtlas", Type: "sampler2D"},
-			{Name: "uStreamTex", Type: "sampler2D"},
-			{Name: "uAtlasGrid", Type: "vec2"},
-			{Name: "uAtlasFrames", Type: "float"},
-			{Name: "uAtlasFPS", Type: "float"},
-			{Name: "uFrame", Type: "float"},
-		},
-		Textures: []TextureMeta{
-			{Name: "uFlowTex", DataURL: flowURL, Width: flowW, Height: flowH},
-			{Name: "uRDAtlas", DataURL: rdURL, Width: aw, Height: ah, GridCols: gridCols, GridRows: gridRows, Frames: frames, FPS: fps},
-		},
-	}
-
-	jsonOK(w)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func healthCheck(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "OPTIONS" {
-		optionsHandler(w, r)
-		return
-	}
-	jsonOK(w)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":    "healthy",
-		"timestamp": time.Now(),
-		"version":   "2.3.0",
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status": "ok",
+		"time":   time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize: 1024, WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool { return true },
+func versionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"version":   appVersion,
+		"buildTime": appBuildTime,
+	})
 }
 
-type subMsg struct {
-	Type  string `json:"type"`
-	Field string `json:"field"`
-	W     int    `json:"w"`
-	H     int    `json:"h"`
-	FPS   int    `json:"fps"`
-}
+/* ---------- main ---------- */
 
-func wsHandler(w http.ResponseWriter, r *http.Request) {
-	c, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("ws upgrade:", err)
-		return
-	}
-	defer c.Close()
+func main() {
+	router := mux.NewRouter()
 
-	var wdt, hgt, fps int = 256, 256, 24
+	// API
+	api := router.PathPrefix("/api").Subrouter()
+	api.HandleFunc("/health", healthHandler).Methods("GET")
+	api.HandleFunc("/version", versionHandler).Methods("GET")
 
-	c.SetReadLimit(1 << 20)
-	c.SetReadDeadline(time.Now().Add(10 * time.Second))
-	_, data, err := c.ReadMessage()
-	if err == nil {
-		var m subMsg
-		if json.Unmarshal(data, &m) == nil && m.Type == "subscribe" {
-			if m.W > 0 {
-				wdt = m.W
-			}
-			if m.H > 0 {
-				hgt = m.H
-			}
-			if m.FPS > 0 {
-				fps = m.FPS
-			}
-		}
-	}
-	_ = c.SetReadDeadline(time.Time{})
+	// WS
+	router.HandleFunc("/ws", wsHandler)
 
-	stop := make(chan struct{})
-	go streamWaves(c, wdt, hgt, fps, stop)
-
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			if err := c.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second)); err != nil {
-				close(stop)
-				return
-			}
-		}
-	}
-}
-
-func streamWaves(conn *websocket.Conn, w, h, fps int, stop chan struct{}) {
-
-	if w < 16 {
-		w = 16
-	}
-	if h < 16 {
-		h = 16
-	}
-	if fps < 6 {
-		fps = 6
-	}
-	dt := 1.0 / float64(fps)
-	c2 := 0.25
-	alpha := 0.001
-
-	N := w * h
-	uPrev := make([]float64, N)
-	u := make([]float64, N)
-	uNext := make([]float64, N)
-
-	for i := 0; i < 6; i++ {
-		x := rand.Intn(w)
-		y := rand.Intn(h)
-		u[y*w+x] = 1.0
+	// Static (prod build)
+	if info, err := os.Stat(serveStaticDir); err == nil && info.IsDir() {
+		fs := http.FileServer(http.Dir(serveStaticDir))
+		// assets
+		router.PathPrefix("/assets/").Handler(fs)
+		// SPA fallback
+		router.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, filepath.Join(serveStaticDir, "index.html"))
+		})
+	} else {
+		// dev: friendly hint
+		router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("Dev mode: run `cd frontend && npm run dev`"))
+		})
 	}
 
-	ticker := time.NewTicker(time.Duration(float64(time.Second) * dt))
-	defer ticker.Stop()
-
-	header := func() []byte {
-		buf := &bytes.Buffer{}
-		buf.WriteString("FRAMEv1")
-		buf.WriteByte(0x00)
-		_ = binary.Write(buf, binary.LittleEndian, uint32(w))
-		_ = binary.Write(buf, binary.LittleEndian, uint32(h))
-		_ = binary.Write(buf, binary.LittleEndian, uint32(4))
-		return buf.Bytes()
-	}()
-
-	px := make([]byte, w*h*4)
-
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ticker.C:
-
-			if rand.Float64() < 0.12 {
-				x := rand.Intn(w)
-				y := rand.Intn(h)
-				u[y*w+x] += 1.0 + 1.0*rand.Float64()
-			}
-
-			for y := 1; y < h-1; y++ {
-				for x := 1; x < w-1; x++ {
-					i := y*w + x
-					uxx := u[i-1] - 2*u[i] + u[i+1]
-					uyy := u[i-w] - 2*u[i] + u[i+w]
-					uNext[i] = 2*u[i] - uPrev[i] + c2*(uxx+uyy) - alpha*u[i]
-				}
-			}
-
-			uPrev, u, uNext = u, uNext, uPrev
-
-			var minV, maxV float64 = 9e9, -9e9
-			for i := 0; i < N; i++ {
-				if u[i] < minV {
-					minV = u[i]
-				}
-				if u[i] > maxV {
-					maxV = u[i]
-				}
-			}
-			scale := 1.0
-			if maxV-minV > 1e-6 {
-				scale = 1.0 / (maxV - minV)
-			}
-			for i := 0; i < N; i++ {
-				v := (u[i] - minV) * scale
-				if v < 0 {
-					v = 0
-				}
-				if v > 1 {
-					v = 1
-				}
-				b := byte(v*255 + 0.5)
-				j := i * 4
-				px[j+0] = b
-				px[j+1] = b
-				px[j+2] = b
-				px[j+3] = 255
-			}
-
-			out := make([]byte, len(header)+len(px))
-			copy(out, header)
-			copy(out[len(header):], px)
-			if err := conn.WriteMessage(websocket.BinaryMessage, out); err != nil {
-				return
-			}
-		}
+	// CORS (no cookies required by our app)
+	cors := []handlers.CORSOption{
+		handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"}),
+		handlers.AllowedHeaders([]string{"Content-Type", "Authorization"}),
 	}
-}
-
-func makeFlowField(w, h int) *image.NRGBA {
-	img := image.NewNRGBA(image.Rect(0, 0, w, h))
-	cx := float64(w) * 0.5
-	cy := float64(h) * 0.5
-	rmax := math.Hypot(cx, cy)
-
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			px := float64(x) - cx
-			py := float64(y) - cy
-			r := math.Hypot(px, py) / rmax
-			_ = r
-			ang := math.Atan2(py, px)
-
-			spin := 1.2 + 0.8*math.Sin(2.0*ang)
-			vx := -py / rmax * spin
-			vy := px / rmax * spin
-
-			vx += 0.15 * px / rmax
-			vy += 0.15 * py / rmax
-			mag := math.Min(1.0, math.Hypot(vx, vy)*1.2)
-
-			r8 := byte(((vx*0.5 + 0.5) * 255.0) + 0.5)
-			g8 := byte(((vy*0.5 + 0.5) * 255.0) + 0.5)
-			b8 := byte(mag*255.0 + 0.5)
-
-			i := y*img.Stride + x*4
-			img.Pix[i+0] = r8
-			img.Pix[i+1] = g8
-			img.Pix[i+2] = b8
-			img.Pix[i+3] = 255
-		}
-	}
-	return img
-}
-
-type rdField struct {
-	u []float64
-	v []float64
-	w int
-	h int
-}
-
-func newRD(w, h int) *rdField {
-	f := &rdField{
-		u: make([]float64, w*h),
-		v: make([]float64, w*h),
-		w: w, h: h,
-	}
-	for i := 0; i < w*h; i++ {
-		f.u[i] = 1.0
-		f.v[i] = 0.0
+	if len(allowedOrigins) == 0 {
+		cors = append(cors, handlers.AllowedOrigins([]string{"*"}))
+	} else {
+		cors = append(cors, handlers.AllowedOrigins(allowedOrigins))
 	}
 
-	for n := 0; n < 6; n++ {
-		cx := rand.Intn(w)
-		cy := rand.Intn(h)
-		for y := -6; y <= 6; y++ {
-			for x := -6; x <= 6; x++ {
-				ix := cx + x
-				iy := cy + y
-				if ix >= 0 && ix < w && iy >= 0 && iy < h {
-					i := iy*w + ix
-					f.v[i] = 1.0
-				}
-			}
-		}
-	}
-	return f
-}
-
-func (f *rdField) step(Du, Dv, feed, kill, dt float64) {
-	w, h := f.w, f.h
-	u2 := make([]float64, w*h)
-	v2 := make([]float64, w*h)
-	for y := 1; y < h-1; y++ {
-		for x := 1; x < w-1; x++ {
-			i := y*w + x
-			u := f.u[i]
-			v := f.v[i]
-			uvv := u * v * v
-
-			lapU := f.u[i-1] + f.u[i+1] + f.u[i-w] + f.u[i+w] - 4*u
-			lapV := f.v[i-1] + f.v[i+1] + f.v[i-w] + f.v[i+w] - 4*v
-			u2[i] = u + (Du*lapU-uvv+feed*(1.0-u))*dt
-			v2[i] = v + (Dv*lapV+uvv-(kill+feed)*v)*dt
-			if u2[i] < 0 {
-				u2[i] = 0
-			}
-			if v2[i] < 0 {
-				v2[i] = 0
-			}
-			if u2[i] > 1 {
-				u2[i] = 1
-			}
-			if v2[i] > 1 {
-				v2[i] = 1
-			}
-		}
-	}
-	f.u, f.v = u2, v2
-}
-
-func makeRDAtlas(w, h, frames, cols, rows int) (*image.NRGBA, int, int) {
-	if cols*rows < frames {
-		cols = int(math.Ceil(math.Sqrt(float64(frames))))
-		rows = cols
-	}
-	cellW, cellH := w, h
-	aw, ah := cols*cellW, rows*cellH
-	atlas := image.NewNRGBA(image.Rect(0, 0, aw, ah))
-
-	Du, Dv := 0.16, 0.08
-	feed, kill := 0.060, 0.062
-	dt := 1.0
-
-	f := newRD(w, h)
-	totalSteps := 1200
-	captureEvery := totalSteps / frames
-	if captureEvery < 10 {
-		captureEvery = 10
+	var handler http.Handler = handlers.CORS(cors...)(handlers.ProxyHeaders(router))
+	if os.Getenv("ENABLE_SECURITY_HEADERS") == "1" {
+		handler = securityHeaders(handler)
 	}
 
-	frame := 0
-	for step := 0; step < totalSteps && frame < frames; step++ {
-		f.step(Du, Dv, feed, kill, dt)
-		if step%captureEvery == 0 {
-
-			img := image.NewNRGBA(image.Rect(0, 0, w, h))
-			for y := 0; y < h; y++ {
-				for x := 0; x < w; x++ {
-					i := y*w + x
-					v := f.v[i]
-
-					r := uint8(255 * math.Min(1, math.Max(0, 0.5+0.8*v)))
-					g := uint8(255 * math.Min(1, math.Max(0, 0.35+0.9*v)))
-					b := uint8(255 * math.Min(1, math.Max(0, 0.4+0.7*v)))
-					img.Set(x, y, color.NRGBA{R: r, G: g, B: b, A: 255})
-				}
-			}
-			c := frame % cols
-			rw := frame / cols
-			dst := image.Rect(c*cellW, rw*cellH, c*cellW+cellW, rw*cellH+cellH)
-			draw.Draw(atlas, dst, img, image.Point{}, draw.Src)
-			frame++
-		}
+	srv := &http.Server{
+		Addr:              ":" + listenAddr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
-	return atlas, aw, ah
-}
 
-func encodePNGDataURL(img image.Image) string {
-	var buf bytes.Buffer
-	_ = png.Encode(&buf, img)
-	base := base64.StdEncoding.EncodeToString(buf.Bytes())
-	return "data:image/png;base64," + base
-}
-
-func serverCompositeFS() string {
-	return `
-precision mediump float;
-varying vec2 vUV;
-
-uniform vec2  uRes;
-uniform float uTime, uLevel, uBeat, uImpact;
-uniform vec3  uBands;
-uniform sampler2D uFlowTex;
-uniform sampler2D uRDAtlas;
-uniform sampler2D uStreamTex;
-
-uniform vec2  uAtlasGrid;
-uniform float uAtlasFrames;
-uniform float uAtlasFPS;
-uniform float uFrame;
-
-vec3 pal(float t){ return 0.5 + 0.5*cos(6.2831*(vec3(0.0,0.33,0.67)+t)); }
-
-vec2 sampleFlow(vec2 uv){
-  vec3 f = texture2D(uFlowTex, uv).rgb;
-  vec2 v = (f.rg * 2.0 - 1.0);
-  return v * (0.06 + 0.38*uBands.x + 0.22*uBeat + 0.30*uLevel);
-}
-
-vec2 atlasUV(vec2 uv, float frame){
-  float cols = max(1.0, uAtlasGrid.x), rows = max(1.0, uAtlasGrid.y);
-  float idx = mod(frame, uAtlasFrames);
-  float c = mod(idx, cols);
-  float r = floor(idx / cols);
-  vec2 cell = (uv + vec2(c, r)) / vec2(cols, rows);
-  return cell;
-}
-
-void main(){
-  vec2 uv = vUV;
-  vec2 flow = sampleFlow(uv);
-
-  float curl = sin((uv.x+uv.y)*18.0 + uTime*2.1) * 0.003;
-  vec2 adv = uv + flow + vec2(-flow.y, flow.x) * curl;
-
-  float f = uFrame;
-  vec3 rd = texture2D(uRDAtlas, atlasUV(fract(adv), f)).rgb;
-
-  vec3 waves = texture2D(uStreamTex, adv*vec2(1.0,1.0)).rgb;
-
-  vec3 base = rd * (0.45 + 1.35*uLevel + 0.60*uBands.y);
-  float rings = waves.r;
-  vec3 tone = mix(base, base*pal(0.1 + uBands.z*0.3 + uTime*0.05), 0.35 + 0.4*rings);
-
-  tone += vec3(0.9,0.5,1.0) * (0.18*uBeat + 0.12*uImpact);
-
-  vec2 p = uv - 0.5; float r2 = dot(p,p);
-  float vig = smoothstep(0.95, 0.2, r2*(1.0 + 0.25*uBands.z));
-  vec3 col = tone * vig;
-
-  gl_FragColor = vec4(col, 1.0);
-}
-`
+	log.Printf("QuantumSynth Infinite server starting on :%s (STATIC_DIR=%s)", listenAddr, serveStaticDir)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
 }
