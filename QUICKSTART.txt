@@ -1,0 +1,21 @@
+QUICKSTART
+
+Do NOT double-click index.html. Modern browsers block module scripts from file:// URLs.
+
+Windows (PowerShell or CMD)
+1) cd to the folder
+2) start-local.bat
+3) publish-tunnel.bat  (optional public URL)
+
+macOS / Linux
+1) cd to the folder
+2) chmod +x start-local.sh publish-tunnel.sh
+3) ./start-local.sh
+4) ./publish-tunnel.sh  (optional public URL)
+
+Local URL:  http://localhost:5173
+Public URL: printed by cloudflared (https://*.trycloudflare.com)
+
+Audio capture
+- Click Share Audio and select a tab/window with Share system audio ticked (Chrome/Edge).
+- Mobile browsers usually won't expose system audio capture; test on desktop.
