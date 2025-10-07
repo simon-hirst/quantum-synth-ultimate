@@ -1,31 +1,18 @@
-# Auralux
+# Mesmerize Visualizer
 
-A single-purpose, zero-backend audio visualiser that runs locally. It captures system audio or mic and renders a shader that reacts to bass, mids, and highs. No comments in code, names are clear and short.
+Unzip and open `index.html` in a modern Chromium browser. Click **Share Audio** and choose a tab or window with audio, ensure **Share system audio** is enabled.
 
-## Quick start
-1) Install Node 18+
-2) From `frontend/`:
-```bash
-npm i
-npm run dev    # http://localhost:53229
-# or
-npm run build
-npm run preview  # http://localhost:53229
-Use
-Click System and choose Entire screen with Share audio enabled, or use Mic, or Demo.
+## Visualisers
+1. Spectrum Rings
+2. Particle Nebula
+3. Liquid Grid
+4. Waveform Tunnel
+5. Kaleido Bloom
+6. Neon Lissajous
 
-Sensitivity adjusts visual gain.
+Use `[` and `]` to cycle, `1-6` to jump, `F` fullscreen, `P` Picture‑in‑Picture overlay, `C` auto‑calibrate, `H` hide/show UI.
 
-Theme changes the tint palette.
-
-Fullscreen toggles with the button or F11.
-
-Tech
-Vite + TypeScript
-
-Three.js + WebAudio
-
-Notes
-Screen audio requires localhost or HTTPS.
-
-No server or WebSocket is used.
+## Notes
+- System audio capture works best on Chrome/Edge with **Share tab audio**. Safari and some mobiles may not support it.
+- Seamless transitions use audio‑reactive displacement rather than a simple fade.
+- A minimal plugin API exists: create a new file in `src/visuals` exporting a class extending `ShaderVis` with a fragment shader string. Register it in `src/core/visualizerManager.js` list.

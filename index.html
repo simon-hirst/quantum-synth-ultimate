@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mesmerize Visualizer</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div id="ui" class="ui hidden">
+    <div class="row">
+      <button id="share">Share Audio</button>
+      <button id="prev">◀</button>
+      <select id="picker"></select>
+      <button id="next">▶</button>
+      <button id="cal">Calibrate</button>
+      <button id="pip">PiP</button>
+      <button id="fs">Fullscreen</button>
+      <span id="name"></span>
+    </div>
+    <div class="row mini">
+      <span>Keys: [ ] next/prev • 1-6 select • F fullscreen • P PiP • C calibrate • H hide UI</span>
+    </div>
+  </div>
+  <canvas id="screen"></canvas>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
